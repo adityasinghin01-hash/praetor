@@ -15,7 +15,13 @@ from praetor.types import Decision, Finding, InvoiceRecord, VendorPattern, Verdi
 # How far outside a vendor's historical range an amount may fall before we flag it.
 AMOUNT_TOLERANCE = 0.25
 
-REQUIRED_FIELDS = ("vendor_name", "invoice_number", "amount_total")
+# A field counts as expected when this vendor supplies it on at least this share
+# of their other invoices. Learned per vendor rather than hardcoded, so the rules
+# transfer across corpora with different field sets.
+EXPECTED_PRESENCE = 0.8
+
+CHECKED_FIELDS = ("vendor_name", "invoice_number", "amount_total",
+                  "bank_account", "vendor_address")
 
 
 def _norm(s: str | None) -> str:
@@ -46,15 +52,22 @@ def evaluate(record: InvoiceRecord, pattern: VendorPattern | None) -> Decision:
     """Classify one invoice as PASS or EXCEPTION against its vendor's own history."""
     findings: list[Finding] = []
 
-    for name in REQUIRED_FIELDS:
-        if not record.get(name):
-            findings.append(Finding("MISSING_FIELD", name, f"{name} absent from document"))
-
     if pattern is None or pattern.n_invoices == 0:
         findings.append(
             Finding("UNKNOWN_VENDOR", "vendor_name", "no prior invoices for this vendor")
         )
         return Decision(record.doc_id, Verdict.EXCEPTION, findings)
+
+    # A missing field is only an exception if this vendor normally provides it.
+    for name in CHECKED_FIELDS:
+        if record.get(name):
+            continue
+        if pattern.field_presence.get(name, 0.0) >= EXPECTED_PRESENCE:
+            findings.append(Finding(
+                "MISSING_FIELD", name,
+                f"{name} absent, but present on "
+                f"{pattern.field_presence[name] * 100:.0f}% of this vendor's invoices",
+            ))
 
     acct = _norm_acct(record.get("bank_account"))
     if acct:

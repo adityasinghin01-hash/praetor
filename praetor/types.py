@@ -60,6 +60,10 @@ class VendorPattern:
     modal_address: str | None = None
     amount_p05: float | None = None
     amount_p95: float | None = None
+    # fraction of this vendor's invoices that carry each field. A field is only
+    # "expected" if this vendor usually provides it — so a corpus that simply has
+    # no invoice numbers does not make every document an exception.
+    field_presence: dict[str, float] = field(default_factory=dict)
 
 
 class Verdict(str, Enum):

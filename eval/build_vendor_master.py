@@ -87,6 +87,12 @@ def pattern_from(vk: str, rows: list[dict], exclude_doc: str | None = None) -> V
     elif amounts:
         p05, p95 = amounts[0], amounts[-1]
 
+    presence = {}
+    if rows:
+        for fname in ("vendor_name", "invoice_number", "amount_total",
+                      "bank_account", "vendor_address", "currency", "tax_rate"):
+            presence[fname] = sum(1 for r in rows if r.get(fname)) / len(rows)
+
     return VendorPattern(
         vendor_key=vk,
         n_invoices=len(rows),
@@ -97,6 +103,7 @@ def pattern_from(vk: str, rows: list[dict], exclude_doc: str | None = None) -> V
         modal_address=_mode([r["vendor_address"] for r in rows]),
         amount_p05=p05,
         amount_p95=p95,
+        field_presence=presence,
     )
 
 

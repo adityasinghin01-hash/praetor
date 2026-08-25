@@ -1,0 +1,215 @@
+"""Constructed invoices with a full field set — SYNTHETIC, and labelled as such.
+
+Why this exists: SROIE (our no-approval fallback) carries essentially one usable
+field, `amount_total`. It cannot express a bank account, an invoice number, a
+currency or a tax rate, so it cannot support the exception or security demo. DocILE
+can, but is gated behind a human-approved access request.
+
+So: real documents carry the extraction numbers, constructed ones carry the exception
+and security demo, and every reported figure says which corpus it came from.
+
+Ground truth by construction: each deviation is introduced deliberately, so the
+correct answer is known exactly — it is the perturbation applied. That is what makes
+exception-resolution accuracy measurable at all.
+
+Usage:
+    python eval/make_invoices.py --out data/constructed --vendors 25 --per-vendor 12
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import random
+from pathlib import Path
+
+CURRENCIES = ["EUR", "USD", "GBP"]
+TAX_RATES = ["19%", "21%", "20%", "7%"]
+STREETS = ["Harbour Road", "Industrieweg", "Kaiserstrasse", "Rue du Commerce",
+           "Mill Lane", "Hafenstrasse", "Viale Industria", "Nieuwe Gracht"]
+CITIES = ["Rotterdam", "Hamburg", "Lyon", "Manchester", "Antwerp", "Milan",
+          "Utrecht", "Bremen"]
+STEMS = ["Meridian", "Northgate", "Verhoeven", "Kestrel", "Aalborg", "Pentland",
+         "Brunel", "Castellane", "Ferro", "Lindqvist", "Ostwald", "Marchetti"]
+KINDS = ["Supply Co.", "Logistics BV", "Industrieteknik GmbH", "Components Ltd",
+         "Packaging SA", "Fasteners BV", "Materials Ltd", "Handel GmbH"]
+
+# Where each field sits on the page, as relative bbox [l, t, r, b].
+LAYOUT = {
+    "vendor_name":     [0.08, 0.08, 0.52, 0.11],
+    "vendor_address":  [0.08, 0.12, 0.55, 0.15],
+    "invoice_number":  [0.62, 0.08, 0.92, 0.11],
+    "invoice_date":    [0.62, 0.12, 0.92, 0.15],
+    "bank_account":    [0.08, 0.78, 0.52, 0.81],
+    "tax_rate":        [0.62, 0.70, 0.92, 0.73],
+    "currency":        [0.62, 0.74, 0.92, 0.77],
+    "amount_total":    [0.62, 0.82, 0.92, 0.86],
+}
+FIELDTYPE = {  # our attr -> DocILE-style fieldtype (praetor.docile_adapter.FIELD_MAP)
+    "vendor_name": "vendor_name",
+    "vendor_address": "vendor_address",
+    "invoice_number": "invoice_id",
+    "bank_account": "payment_iban",
+    "tax_rate": "tax_detail_rate",
+    "currency": "currency_code_amount_due",
+    "amount_total": "amount_total",
+    "invoice_date": "invoice_date",
+}
+
+# Deviations we introduce. The key IS the ground-truth label.
+DEVIATIONS = [
+    "BANK_ACCOUNT_CHANGED",
+    "CURRENCY_CHANGED",
+    "TAX_RATE_CHANGED",
+    "ADDRESS_CHANGED",
+    "AMOUNT_SPIKE",
+    "DUPLICATE_INVOICE_NUMBER",
+    "MISSING_BANK_ACCOUNT",
+]
+
+
+def make_vendors(n: int, rng: random.Random) -> list[dict]:
+    """Names must be unique: two vendors sharing a name merge into one pattern and
+    then every field of both looks like a mismatch. Observed on the first run."""
+    vendors: list[dict] = []
+    used: set[str] = set()
+    for i in range(n):
+        base = rng.randint(200, 4000)
+        for _ in range(200):
+            name = f"{rng.choice(STEMS)} {rng.choice(KINDS)}"
+            if name not in used:
+                break
+        else:
+            name = f"{rng.choice(STEMS)} {rng.choice(KINDS)} {i}"
+        used.add(name)
+        vendors.append({
+            "key": f"V{i:03d}",
+            "name": name,
+            "address": f"{rng.randint(1, 180)} {rng.choice(STREETS)}, {rng.choice(CITIES)}",
+            "iban": f"NL{rng.randint(10,99)}RABO{rng.randint(10**9, 10**10 - 1)}",
+            "currency": rng.choice(CURRENCIES),
+            "tax_rate": rng.choice(TAX_RATES),
+            "amount_lo": base,
+            "amount_hi": base * rng.uniform(2.0, 5.0),
+        })
+    return vendors
+
+
+def build(vendor: dict, seq: int, rng: random.Random,
+          deviation: str | None) -> tuple[dict, dict]:
+    """Return (fields, truth). `truth` records exactly what was perturbed."""
+    f = {
+        "vendor_name": vendor["name"],
+        "vendor_address": vendor["address"],
+        "invoice_number": f"{vendor['key']}-{2400 + seq}",
+        "invoice_date": f"{rng.randint(1,28):02d}/0{rng.randint(1,9)}/2026",
+        "bank_account": vendor["iban"],
+        "tax_rate": vendor["tax_rate"],
+        "currency": vendor["currency"],
+        "amount_total": f"{rng.uniform(vendor['amount_lo'], vendor['amount_hi']):,.2f}",
+    }
+    truth = {"deviation": deviation, "expected_finding": deviation}
+
+    if deviation == "BANK_ACCOUNT_CHANGED":
+        f["bank_account"] = f"DE{rng.randint(10,99)}COBA{rng.randint(10**9, 10**10 - 1)}"
+        truth["original"] = vendor["iban"]
+    elif deviation == "CURRENCY_CHANGED":
+        f["currency"] = rng.choice([c for c in CURRENCIES if c != vendor["currency"]])
+    elif deviation == "TAX_RATE_CHANGED":
+        f["tax_rate"] = rng.choice([t for t in TAX_RATES if t != vendor["tax_rate"]])
+    elif deviation == "ADDRESS_CHANGED":
+        f["vendor_address"] = f"{rng.randint(1,180)} {rng.choice(STREETS)}, {rng.choice(CITIES)}"
+    elif deviation == "AMOUNT_SPIKE":
+        f["amount_total"] = f"{vendor['amount_hi'] * rng.uniform(6, 14):,.2f}"
+    elif deviation == "DUPLICATE_INVOICE_NUMBER":
+        f["invoice_number"] = f"{vendor['key']}-{2400}"      # collides with seq 0
+    elif deviation == "MISSING_BANK_ACCOUNT":
+        f.pop("bank_account")
+
+    return f, truth
+
+
+def to_annotation(fields: dict, injected: str | None) -> dict:
+    out = []
+    for attr, value in fields.items():
+        out.append({
+            "fieldtype": FIELDTYPE[attr],
+            "text": str(value),
+            "page": 0,
+            "bbox": LAYOUT.get(attr, [0.0, 0.0, 0.1, 0.02]),
+            "line_item_id": None,
+        })
+    if injected:
+        # An attacker-controlled span. It is a real span in the document, which is
+        # the point: the reader may legitimately point at it, and the policy gate
+        # is what must stop it.
+        out.append({
+            "fieldtype": "other",
+            "text": injected,
+            "page": 0,
+            "bbox": [0.08, 0.88, 0.92, 0.94],
+            "line_item_id": None,
+        })
+    return {"field_extractions": out, "source": "constructed", "synthetic": True}
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--out", default="data/constructed")
+    ap.add_argument("--vendors", type=int, default=25)
+    ap.add_argument("--per-vendor", type=int, default=12)
+    ap.add_argument("--deviation-rate", type=float, default=0.18)
+    ap.add_argument("--inject-rate", type=float, default=0.05,
+                    help="fraction carrying an injection payload span")
+    ap.add_argument("--seed", type=int, default=7)
+    args = ap.parse_args()
+
+    rng = random.Random(args.seed)
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    for old in out.glob("*.json"):
+        old.unlink()
+
+    try:
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from attacks.payloads import TAXONOMY
+        payloads = [p.text for p in TAXONOMY]
+    except Exception:  # noqa: BLE001
+        payloads = []
+
+    vendors = make_vendors(args.vendors, rng)
+    truth_rows, n_dev, n_inj = [], 0, 0
+
+    for v in vendors:
+        for seq in range(args.per_vendor):
+            dev = None
+            if seq >= 3 and rng.random() < args.deviation_rate:   # first 3 establish the norm
+                dev = rng.choice(DEVIATIONS)
+                n_dev += 1
+            injected = None
+            if payloads and rng.random() < args.inject_rate:
+                injected = rng.choice(payloads)
+                n_inj += 1
+
+            fields, truth = build(v, seq, rng, dev)
+            doc_id = f"{v['key']}_{seq:03d}"
+            (out / f"{doc_id}.json").write_text(json.dumps(to_annotation(fields, injected)))
+            truth_rows.append({"doc_id": doc_id, "vendor_key": v["key"],
+                               "injected": bool(injected), **truth})
+
+    truth_path = out.parent / "constructed_truth.jsonl"
+    with truth_path.open("w") as fh:
+        for r in truth_rows:
+            fh.write(json.dumps(r) + "\n")
+
+    total = len(truth_rows)
+    print(f"wrote {total} constructed invoices to {out}")
+    print(f"  vendors:            {args.vendors} x {args.per_vendor}")
+    print(f"  with a deviation:   {n_dev}  ({n_dev / total * 100:.1f}%)")
+    print(f"  with an injection:  {n_inj}  ({n_inj / total * 100:.1f}%)")
+    print(f"  ground truth ->     {truth_path}")
+    print("\nALL SYNTHETIC. Label it as such in every reported number.")
+
+
+if __name__ == "__main__":
+    main()

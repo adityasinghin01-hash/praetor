@@ -24,6 +24,9 @@ def _pattern() -> VendorPattern:
         modal_address="14 Harbour Road, Rotterdam",
         amount_p05=1000.0,
         amount_p95=60000.0,
+        field_presence={"vendor_name": 1.0, "invoice_number": 1.0,
+                        "amount_total": 1.0, "bank_account": 1.0,
+                        "vendor_address": 1.0},
     )
 
 
@@ -74,10 +77,19 @@ def test_amount_far_outside_history_is_flagged():
     assert "AMOUNT_OUT_OF_RANGE" in evaluate(r, _pattern()).codes
 
 
-def test_missing_required_field_is_flagged():
+def test_missing_field_is_flagged_when_this_vendor_usually_has_it():
     r = _clean()
     r.invoice_number = None
     assert "MISSING_FIELD" in evaluate(r, _pattern()).codes
+
+
+def test_missing_field_is_ignored_when_this_vendor_rarely_has_it():
+    """A corpus without invoice numbers must not make every document an exception."""
+    p = _pattern()
+    p.field_presence["invoice_number"] = 0.05
+    r = _clean()
+    r.invoice_number = None
+    assert "MISSING_FIELD" not in evaluate(r, p).codes
 
 
 if __name__ == "__main__":
