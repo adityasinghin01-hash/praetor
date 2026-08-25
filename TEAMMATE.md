@@ -33,14 +33,21 @@ and ordinary code reads what it pointed at. The AI cannot make up a bank account
 
 ## 2. Your job
 
-You own the **machine learning** half. Two tasks:
+**You own every number we show the judges.**
 
-- **Task A — you can start today.** Get a public dataset of attack examples and
-  measure how often they fool the AI. (Section 6)
-- **Task B — starts when our data access arrives.** Measure how accurately we read
-  invoices, compared to published scores other researchers got. (Section 7)
+Aditya owns the system — the agents, the security code, the deployment, the screen.
+You own the evidence that it works. If a figure appears in our video or our writeup,
+you produced it and you can reproduce it.
 
-Aditya owns the agents, backend and frontend. You do not need to touch those.
+Three jobs:
+
+- **Task A — start today.** Measure how often attacks written by *other people* fool
+  the AI. (Section 6)
+- **Task B — start today.** Measure how accurately we read real documents. (Section 7)
+- **Task C — starts in a day or two.** When the agent decides an odd invoice is
+  actually fine, was it right? (Section 7b)
+
+You do not touch the agents, the security code, Cloud Run or the frontend.
 
 ---
 
@@ -175,25 +182,52 @@ It prints `ATTACK SUCCESS RATE (undefended) = XX%`. Send him:
 
 ---
 
-## 7. TASK B — your main job (starts when the data arrives)
+## 7. TASK B — how accurately do we read documents (start today)
 
-We are waiting on access to **DocILE** — a free research collection of 6,700 real
-business invoices with the correct answers already marked.
+**Good news: this is no longer blocked.** We already have **300 real scanned receipts**
+with the correct answers marked, in `data/sroie_annotations/`. They came from a public
+research dataset called SROIE. No permission needed.
 
-**Get your own access now so we are not waiting on one person:**
-go to **https://docile.rossum.ai/**, request a token, save the email.
+Each file lists the pieces of text on the document, where each one sits on the page,
+and which ones are the company name, the address and the total.
 
-When it arrives, your job is:
+**Your job:** measure how often our reader picks the right one.
 
-1. Read the invoices and pull out the fields (supplier name, amount, bank account…)
-2. Measure how often you get them right
-3. Compare that to the scores published by the researchers who made the dataset
-   (they used models called LayoutLMv3, RoBERTa and DETR)
+1. Run our reader over those documents
+2. Compare what it picked against the correct answer in the file
+3. Report accuracy per field: company, address, total
 
-**Use scikit-learn or xgboost. Not PyTorch** — see below.
+The people who made SROIE ran a public competition in 2019 and published the winning
+scores. Look those up — that is what we compare ourselves to.
 
-While you wait, read the DocILE paper (**arXiv 2302.05658**) and write down the
-baseline numbers from it. Those are the numbers we are trying to match or beat.
+**Use scikit-learn or xgboost. Not PyTorch** — see section 8.
+
+### Also do this today (2 minutes)
+Go to **https://docile.rossum.ai/** and request access to the DocILE dataset. It is
+6,700 real *business invoices*, much richer than receipts — it even includes bank
+account numbers, which receipts do not. A human approves the request, so we need two
+of us asking in case one is slow. Tell Aditya when your email arrives.
+
+## 7b. TASK C — was the agent right to let it through? (starts in a day or two)
+
+This is the most important number in the whole project, so read it even though you
+cannot start yet.
+
+Our simple rule-checker already catches **every** odd invoice we plant — recall 1.000,
+F1 0.865. So the AI is not there to *find* odd invoices. Rules already do that.
+
+The AI is there to decide **whether an odd invoice is actually a problem.**
+
+Example: an invoice is five times the usual amount. The rule flags it. But the invoice
+also says *"includes annual licence true-up per contract"*. A human would read that and
+approve it. That is the AI's job — and doing it means a person never has to look.
+
+**Your job will be to measure two things:**
+1. How many invoices did the AI save a human from looking at?
+2. How often was it **wrong** to do that? (letting a real problem through is far worse
+   than sending a fine invoice to a human)
+
+Aditya is building the test data for this now.
 
 ---
 
