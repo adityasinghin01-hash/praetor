@@ -29,6 +29,7 @@ from eval.build_vendor_master import MIN_INVOICES, pattern_from, vendor_key  # n
 from praetor.agents.exception_agent import adjudicate  # noqa: E402
 from praetor.baseline_rules import evaluate  # noqa: E402
 from praetor.docile_adapter import load_annotation, to_record  # noqa: E402
+from praetor import costguard  # noqa: E402
 from praetor.types import Verdict  # noqa: E402
 
 
@@ -46,7 +47,7 @@ def main() -> None:
     ap.add_argument("--out", default="out/adjudication.jsonl")
     ap.add_argument("--delay", type=float, default=3.0)
     ap.add_argument("--limit", type=int)
-    ap.add_argument("--models", default="gemini-3.5-flash,gemini-3.5-flash-lite",
+    ap.add_argument("--models", default="gemini-3.5-flash-lite,gemini-3.5-flash",
                     help="fallback chain; all must be Gemini 3.5+")
     args = ap.parse_args()
 
@@ -142,6 +143,7 @@ def main() -> None:
         print("\n  the agent was persuaded by the document in these cases:")
         for r in overrides[:5]:
             print(f"    {r['doc_id']:12} {r['reason'][:70]}")
+    print(f"\nCOST: {costguard.report()}")
     codes = Counter(c for r in resolved for c in r["codes"])
     if codes:
         print("\nresolved by finding type:")

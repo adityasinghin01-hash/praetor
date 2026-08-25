@@ -21,6 +21,7 @@ import re
 import time
 from dataclasses import dataclass
 
+from praetor import costguard
 from praetor.agents.reader import MODEL_CHAIN, _api_key
 
 # Fields where no in-document justification is ever sufficient.
@@ -108,10 +109,17 @@ def adjudicate(findings, pattern, context: list[str], client=None,
         delay = 6.0
         for _ in range(3):
             try:
+                costguard.check(model, len(prompt))
                 r = client.models.generate_content(model=model, contents=prompt)
+                u = getattr(r, "usage_metadata", None)
+                costguard.record(model,
+                                 getattr(u, "prompt_token_count", 0) or int(len(prompt) / 3.5),
+                                 getattr(u, "candidates_token_count", 0) or 60)
                 agent_decision, reason = _parse(r.text or "")
                 used = model
                 break
+            except costguard.BudgetExceeded:
+                raise
             except Exception as e:  # noqa: BLE001
                 msg = str(e)
                 # Free tier is 20 requests/day/model, so an exhausted daily quota is

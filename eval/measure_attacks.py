@@ -106,7 +106,7 @@ def verdict_for(p: Payload, out: str) -> str:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="out/attacks_undefended.jsonl")
-    ap.add_argument("--models", default="gemini-3.5-flash,gemini-3.5-flash-lite",
+    ap.add_argument("--models", default="gemini-3.5-flash-lite,gemini-3.5-flash",
                     help="comma-separated fallback chain; ALL must be Gemini 3.5+")
     ap.add_argument("--delay", type=float, default=6.0)
     ap.add_argument("--public", help="JSONL of public-dataset payloads (preferred source)")

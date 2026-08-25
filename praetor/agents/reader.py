@@ -24,9 +24,14 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from praetor import costguard
+
 # Every model here must be Gemini 3.5+ to meet the hackathon requirement.
 # gemini-3.5-flash returned 503 under load on 25 Aug, so the chain is not optional.
-MODEL_CHAIN = ("gemini-3.5-flash", "gemini-3.5-flash-lite")
+# flash-lite first: 5x cheaper than flash ($0.30/$2.50 vs $1.50/$9.00 per 1M tokens)
+# and flash has been returning 503 under load. Both are Gemini 3.5+, so both meet
+# the hackathon requirement.
+MODEL_CHAIN = ("gemini-3.5-flash-lite", "gemini-3.5-flash")
 
 WANTED_FIELDS = (
     "vendor_name", "invoice_number", "amount_total",
@@ -100,7 +105,12 @@ def read(spans: dict[str, str], client=None, models=MODEL_CHAIN) -> ReaderResult
         delay = 6.0
         for _ in range(3):
             try:
+                costguard.check(model, len(prompt))
                 r = client.models.generate_content(model=model, contents=prompt)
+                u = getattr(r, "usage_metadata", None)
+                costguard.record(model,
+                                 getattr(u, "prompt_token_count", 0) or int(len(prompt) / 3.5),
+                                 getattr(u, "candidates_token_count", 0) or 80)
                 raw = r.text or ""
                 return ReaderResult(mapping=_parse(raw), model=model, raw=raw)
             except Exception as e:  # noqa: BLE001
