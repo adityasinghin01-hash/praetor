@@ -1,0 +1,105 @@
+"""The rules baseline.
+
+Deliberately written BEFORE any agent code: this is what the agent has to beat.
+If the agent cannot beat exact-match-plus-tolerance, we learn that on day 2 rather
+than from a judge.
+
+No AI anywhere in this file, by design.
+"""
+from __future__ import annotations
+
+import re
+
+from praetor.types import Decision, Finding, InvoiceRecord, VendorPattern, Verdict
+
+# How far outside a vendor's historical range an amount may fall before we flag it.
+AMOUNT_TOLERANCE = 0.25
+
+REQUIRED_FIELDS = ("vendor_name", "invoice_number", "amount_total")
+
+
+def _norm(s: str | None) -> str:
+    """Loose normalisation for comparing free text like addresses."""
+    if not s:
+        return ""
+    return re.sub(r"[^a-z0-9]+", " ", s.lower()).strip()
+
+
+def _norm_acct(s: str | None) -> str:
+    """Bank accounts differ only by punctuation and case across documents."""
+    if not s:
+        return ""
+    return re.sub(r"[^A-Za-z0-9]+", "", s).upper()
+
+
+def _to_float(s: str | None) -> float | None:
+    if not s:
+        return None
+    cleaned = re.sub(r"[^0-9.\-]", "", s.replace(",", ""))
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
+def evaluate(record: InvoiceRecord, pattern: VendorPattern | None) -> Decision:
+    """Classify one invoice as PASS or EXCEPTION against its vendor's own history."""
+    findings: list[Finding] = []
+
+    for name in REQUIRED_FIELDS:
+        if not record.get(name):
+            findings.append(Finding("MISSING_FIELD", name, f"{name} absent from document"))
+
+    if pattern is None or pattern.n_invoices == 0:
+        findings.append(
+            Finding("UNKNOWN_VENDOR", "vendor_name", "no prior invoices for this vendor")
+        )
+        return Decision(record.doc_id, Verdict.EXCEPTION, findings)
+
+    acct = _norm_acct(record.get("bank_account"))
+    if acct:
+        known = {_norm_acct(a) for a in pattern.bank_accounts}
+        if acct not in known:
+            findings.append(
+                Finding("BANK_UNKNOWN", "bank_account",
+                        "account not seen on any prior invoice from this vendor")
+            )
+
+    inv_no = record.get("invoice_number")
+    if inv_no and inv_no in pattern.seen_invoice_numbers:
+        findings.append(
+            Finding("DUPLICATE_INVOICE", "invoice_number", f"{inv_no} already processed")
+        )
+
+    cur = record.get("currency")
+    if cur and pattern.modal_currency and cur.upper() != pattern.modal_currency.upper():
+        findings.append(
+            Finding("CURRENCY_MISMATCH", "currency",
+                    f"{cur} vs usual {pattern.modal_currency}")
+        )
+
+    tax = record.get("tax_rate")
+    if tax and pattern.modal_tax_rate and _norm(tax) != _norm(pattern.modal_tax_rate):
+        findings.append(
+            Finding("TAX_RATE_MISMATCH", "tax_rate",
+                    f"{tax} vs usual {pattern.modal_tax_rate}")
+        )
+
+    addr = _norm(record.get("vendor_address"))
+    if addr and pattern.modal_address and addr != _norm(pattern.modal_address):
+        findings.append(
+            Finding("ADDRESS_MISMATCH", "vendor_address", "differs from usual address")
+        )
+
+    amt = _to_float(record.get("amount_total"))
+    if amt is not None and pattern.amount_p05 is not None and pattern.amount_p95 is not None:
+        lo = pattern.amount_p05 * (1 - AMOUNT_TOLERANCE)
+        hi = pattern.amount_p95 * (1 + AMOUNT_TOLERANCE)
+        if amt < lo or amt > hi:
+            findings.append(
+                Finding("AMOUNT_OUT_OF_RANGE", "amount_total",
+                        f"{amt:.2f} outside usual {lo:.2f}-{hi:.2f}")
+            )
+
+    verdict = Verdict.EXCEPTION if findings else Verdict.PASS
+    return Decision(record.doc_id, verdict, findings)

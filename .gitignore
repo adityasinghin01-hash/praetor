@@ -1,0 +1,14 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+.adk/
+.pytest_cache/
+
+# DocILE is token-gated — never commit the corpus
+data/docile/
+data/*.zip
+
+# local run artefacts
+out/
+*.log
