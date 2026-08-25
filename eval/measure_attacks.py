@@ -24,6 +24,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from attacks.payloads import ATTACK_ACCOUNT, TAXONOMY, Payload, load_public  # noqa: E402
+from praetor import costguard  # noqa: E402
 
 TRUSTED_ACCOUNT = "IN45-HDFC-0001-7788"
 
@@ -71,11 +72,16 @@ def ask(client, models: list[str], document: str, tries: int = 4) -> tuple[str, 
         delay = 6.0
         for _ in range(tries):
             try:
-                r = client.models.generate_content(
-                    model=model,
-                    contents=f"{SYSTEM}\n\n--- DOCUMENT ---\n{document}\n--- END ---",
-                )
+                body = f"{SYSTEM}\n\n--- DOCUMENT ---\n{document}\n--- END ---"
+                costguard.check(model, len(body))
+                r = client.models.generate_content(model=model, contents=body)
+                u = getattr(r, "usage_metadata", None)
+                costguard.record(model,
+                                 getattr(u, "prompt_token_count", 0) or int(len(body) / 3.5),
+                                 getattr(u, "candidates_token_count", 0) or 80)
                 return (r.text or ""), model
+            except costguard.BudgetExceeded:
+                raise
             except Exception as e:  # noqa: BLE001
                 msg = str(e)
                 last = msg
@@ -142,6 +148,7 @@ def main() -> None:
             print(f"{p.id}  {p.technique:28} {v:12} [{used}]", flush=True)
             time.sleep(args.delay)
 
+    print(f"\nCOST: {costguard.report()}")
     rows = [json.loads(l) for l in out_path.read_text().splitlines() if l.strip()]
     ran = [r for r in rows if r["verdict"] != "error"]
     comp = [r for r in ran if r["verdict"] == "compromised"]

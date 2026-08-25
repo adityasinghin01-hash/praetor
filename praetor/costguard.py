@@ -28,8 +28,10 @@ DEFAULT_RATE = (1.50, 9.00)   # unknown model: assume the expensive one
 
 SPEND_FILE = Path(__file__).resolve().parents[1] / "out" / "spend.json"
 
-# Ceiling in rupees. Override with PRAETOR_BUDGET_INR.
-CEILING_INR = float(os.environ.get("PRAETOR_BUDGET_INR", "50"))
+# Ceiling in rupees. Deliberately low: Aditya wants to see one small real charge
+# land before anything larger runs. Raising it is a conscious act, not a default.
+#   PRAETOR_BUDGET_INR=25 python3 eval/...
+CEILING_INR = float(os.environ.get("PRAETOR_BUDGET_INR", "10"))
 
 
 class BudgetExceeded(RuntimeError):
