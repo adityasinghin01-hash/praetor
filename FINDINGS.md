@@ -49,5 +49,10 @@ technique-level breakdown.
 - Every model in the chain must be **Gemini 3.5+**. The `gemini-3.1-*` models do
   not satisfy the hackathon requirement, and `gemini-flash-latest` is an
   unversioned alias whose version cannot be stated on the submission form.
-- Free-tier limits (15 RPM) break unattended batch runs — 429 and 503 both observed.
+- **The Gemini free tier is 20 requests per DAY per model**, not per minute:
+  `quotaId: GenerateRequestsPerDayPerProjectPerModel-FreeTier, quotaValue: 20`.
+  With a two-model fallback chain that is 40 calls/day total. One adjudication run
+  over the constructed corpus needs ~54. **Billing is required to run the core
+  experiment at all** — this is not a convenience.
+- Free-tier per-minute limits and 503s also break unattended batch runs.
 - `torch` has no wheel for Python 3.14.6; use xgboost / scikit-learn.
