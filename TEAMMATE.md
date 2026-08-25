@@ -53,7 +53,7 @@ Open your terminal and run these one at a time:
 
 ```bash
 # 1. get the code
-git clone <REPO_URL_HERE>
+git clone https://github.com/adityasinghin01-hash/praetor.git
 cd praetor
 
 # 2. make a private space for our libraries (a "virtual environment")

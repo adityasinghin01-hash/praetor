@@ -46,7 +46,7 @@ misses the ones that work.
 Requires Python 3.11–3.13 (**not 3.14** — `torch` has no wheel for it).
 
 ```bash
-git clone <repo> && cd praetor
+git clone https://github.com/adityasinghin01-hash/praetor.git && cd praetor
 python3 -m venv .venv && source .venv/bin/activate
 pip install google-genai pytest scikit-learn xgboost pandas numpy
 
