@@ -132,3 +132,48 @@ def test_a_privileged_field_still_wins_over_everything():
                    models=("fake",), register=REGISTER, allow_local=False)
     assert a.decision == "escalate"
     assert a.override_reason == "privileged field"
+
+
+# ------------------------------------------- reconciling against the order's amount
+
+REGISTER_WITH_AMOUNTS = {"PO-68910": {"amount": 58944.46, "currency": "EUR"}}
+
+
+def test_an_order_covers_an_invoice_that_matches_it():
+    (claim,) = authority.find_claims([REAL_APPROVAL], REGISTER_WITH_AMOUNTS, 58944.46)
+    assert claim.verified
+
+
+def test_a_small_difference_is_within_tolerance():
+    (claim,) = authority.find_claims([REAL_APPROVAL], REGISTER_WITH_AMOUNTS, 58000.00)
+    assert claim.verified
+
+
+def test_a_real_order_cited_for_the_wrong_money_is_not_verified():
+    """The gap presence-only checking leaves: a genuine PO, the wrong amount against it."""
+    (claim,) = authority.find_claims([REAL_APPROVAL], REGISTER_WITH_AMOUNTS, 12000.00)
+    assert not claim.verified
+    assert claim.mismatch == ("PO-68910", 12000.00, 58944.46)
+    assert "raised for 58,944.46" in claim.describe()
+
+
+def test_a_presence_only_register_still_verifies():
+    """A register with no amounts is a weaker control, not a broken one."""
+    (claim,) = authority.find_claims([REAL_APPROVAL], REGISTER, 12000.00)
+    assert claim.verified
+
+
+def test_without_an_invoice_amount_the_reference_alone_decides():
+    (claim,) = authority.find_claims([REAL_APPROVAL], REGISTER_WITH_AMOUNTS, None)
+    assert claim.verified
+
+
+def test_a_mismatched_order_overrides_a_resolve():
+    a = adjudicate(_findings("AMOUNT_OUT_OF_RANGE", "amount_total"), _pattern(),
+                   [REAL_APPROVAL],
+                   client=_FakeClient("approved under a purchase order"),
+                   models=("fake",), register=REGISTER_WITH_AMOUNTS,
+                   allow_local=False, invoice_amount=12000.00)
+    assert a.decision == "escalate"
+    assert a.overridden
+    assert "raised for" in a.override_reason

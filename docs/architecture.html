@@ -281,10 +281,11 @@ footer b{color:var(--dim)}
         &bull; <span class="mono">bank_account</span> is privileged: no in&#8209;document
         justification can ever release it.<br>
         &bull; An approval the document claims for <i>itself</i> counts only if the
-        buyer&rsquo;s register holds the reference. &nbsp;<span class="mono">authority.py</span><br>
+        buyer&rsquo;s register holds the reference <i>and</i> this invoice reconciles to
+        the amount that order was raised for. &nbsp;<span class="mono">authority.py</span><br>
         &bull; One client&rsquo;s vendor master can never vouch for another&rsquo;s
         invoice. &nbsp;<span class="mono">tenancy.py</span><br>
-        &bull; Amount outside 2% of the PO, or a first&#8209;time vendor &rarr; escalate.</div>
+        &bull; A first&#8209;time vendor &rarr; escalate.</div>
       <div class="no blue nw">agent ceiling: propose_pay</div>
     </div>
 

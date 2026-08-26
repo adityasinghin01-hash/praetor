@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import time
 from collections import Counter
@@ -37,6 +38,16 @@ def context_spans(annotation: dict) -> list[str]:
     """Free text on the document — where an explanation would live."""
     return [f.get("text", "") for f in annotation.get("field_extractions", [])
             if f.get("fieldtype") == "other"][:12]
+
+
+def _amount(s: str | None) -> float | None:
+    """The invoice total, so a cited purchase order can be reconciled against it."""
+    if not s:
+        return None
+    try:
+        return float(re.sub(r"[^0-9.\-]", "", s.replace(",", "")))
+    except ValueError:
+        return None
 
 
 def main() -> None:
@@ -82,7 +93,8 @@ def main() -> None:
         pattern = pattern_from(vk, rows, exclude_doc=rec.doc_id)
         d = evaluate(rec, pattern)
         if d.verdict is Verdict.EXCEPTION:
-            flagged.append((rec.doc_id, d.findings, pattern, context_spans(ann)))
+            amount = _amount(rec.get("amount_total"))
+            flagged.append((rec.doc_id, d.findings, pattern, context_spans(ann), amount))
 
     if args.limit:
         flagged = flagged[: args.limit]
@@ -90,10 +102,10 @@ def main() -> None:
 
     # 2. agent pass — one call each
     with out_path.open("a") as fh:
-        for doc_id, findings, pattern, ctx in flagged:
+        for doc_id, findings, pattern, ctx, amount in flagged:
             if doc_id in done:
                 continue
-            a = adjudicate(findings, pattern, ctx, models=models)
+            a = adjudicate(findings, pattern, ctx, models=models, invoice_amount=amount)
             row = {"doc_id": doc_id, "decision": a.decision,
                    "agent_decision": a.agent_decision, "overridden": a.overridden,
                    "override_reason": a.override_reason,

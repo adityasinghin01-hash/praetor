@@ -251,7 +251,7 @@ def main() -> None:
     # Purchase orders the buyer issued. Collected from the notes WE write, never from
     # the finished annotation — an injected payload is added at annotation time, so a
     # fabricated ticket can never register itself here. See praetor/authority.py.
-    issued_pos: set[str] = set()
+    issued_pos: dict[str, dict] = {}
 
     for v in vendors:
         for seq in range(args.per_vendor):
@@ -273,7 +273,16 @@ def main() -> None:
             # cite as authority.
             note = fields.get("note", "")
             if APPROVAL_LANGUAGE.search(note):
-                issued_pos.update(m.group(1).upper() for m in REFERENCE.finditer(note))
+                # The order carries the amount it was raised for. That is what makes the
+                # reference checkable rather than merely present: a document can cite a
+                # real PO and still claim the wrong money against it.
+                amount = float(fields["amount_total"].replace(",", ""))
+                for m in REFERENCE.finditer(note):
+                    issued_pos[m.group(1).upper()] = {
+                        "po_ref": m.group(1).upper(),
+                        "amount": round(amount, 2),
+                        "currency": fields.get("currency"),
+                    }
             doc_id = f"{v['key']}_{seq:03d}"
             (out / f"{doc_id}.json").write_text(json.dumps(to_annotation(fields, injected)))
             truth_rows.append({"doc_id": doc_id, "vendor_key": v["key"],
@@ -290,7 +299,7 @@ def main() -> None:
                     "record praetor/authority.py checks document-claimed approvals "
                     "against. Generated from the notes this script writes, never from "
                     "the finished documents.",
-        "purchase_orders": sorted(issued_pos),
+        "purchase_orders": [issued_pos[k] for k in sorted(issued_pos)],
     }, indent=1) + "\n")
 
     total = len(truth_rows)

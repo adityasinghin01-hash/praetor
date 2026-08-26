@@ -18,7 +18,8 @@ Two rules run after the agent, both deterministic:
 
   1. privileged field  — no in-document justification releases a bank account;
   2. document authority — an approval the document claims for itself counts only if
-     it names a reference held in the buyer's own records (praetor/authority.py).
+     it names a reference held in the buyer's own records, and, where that record
+     carries an amount, only if this invoice reconciles to it (praetor/authority.py).
 
 Rule 2 was added after the first adjudication run, where an injected approval ticket
 persuaded the agent to resolve a genuine tax-rate exception. The gate held on the
@@ -101,8 +102,8 @@ def _is_privileged(findings) -> bool:
 
 
 def adjudicate(findings, pattern, context: list[str], client=None,
-               models=MODEL_CHAIN, register=None, allow_local: bool = True
-               ) -> Adjudication:
+               models=MODEL_CHAIN, register=None, allow_local: bool = True,
+               invoice_amount: float | None = None) -> Adjudication:
     """Ask the agent, then let the gate have the last word."""
     if not findings:
         return Adjudication("resolve", "resolve", "no findings", False)
@@ -182,7 +183,7 @@ def adjudicate(findings, pattern, context: list[str], client=None,
         # An authorisation the document claims for itself is an assertion, not
         # evidence. If it names nothing we can check against the buyer's own records,
         # it cannot carry the decision. See praetor/authority.py.
-        bad = authority.unverified(context, register)
+        bad = authority.unverified(context, register, invoice_amount)
         if bad:
             return Adjudication("escalate", agent_decision, reason, True, used,
                                 f"unverified authority: {bad[0].describe()}")

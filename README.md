@@ -47,7 +47,8 @@ sure the value never reaches the payment sink.
    deterministic:
    - a tainted account not in the vendor master cannot be paid;
    - an authorisation the document claims for itself counts only if it names a
-     reference held in the buyer's own records (`praetor/authority.py`);
+     reference held in the buyer's own records **and** the invoice reconciles to the
+     amount that order was raised for (`praetor/authority.py`);
    - one client's vendor master can never vouch for another's invoice
      (`praetor/tenancy.py`).
 
