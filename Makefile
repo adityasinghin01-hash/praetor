@@ -5,6 +5,7 @@
 #   make demo       full offline demo: rules baseline + review dashboard
 #   make db         load results into SQLite (tenants, users, approvals)
 #   make serve      the review queue with live approvals (http://127.0.0.1:8000)
+#   make trace      run the kernel with tracing on and print one document's spans
 #   make verify     everything that needs no API key, end to end
 #
 # Targets that spend nothing are the default. The two that call the Gemini API
@@ -14,7 +15,7 @@
 PY := $(shell [ -x .venv/bin/python ] && echo .venv/bin/python || echo python3)
 RUN := PYTHONPATH=. $(PY)
 
-.PHONY: help install test demo verify corpus rules db dashboard serve attacks adjudicate diagram clean
+.PHONY: help install test demo verify corpus rules db dashboard serve trace attacks adjudicate diagram clean
 
 help:
 	@sed -n '2,10p' Makefile | sed 's/^# \?//'
@@ -39,6 +40,16 @@ rules:
 		--annotations data/constructed --out out/exc_constructed.jsonl
 	$(RUN) eval/run_eval.py --truth data/constructed_truth.jsonl \
 		--predictions out/exc_constructed.jsonl
+
+# Re-run the rules over the corpus with tracing on, then print one document's spans.
+# Costs nothing and needs no API key: the traced path is the deterministic kernel.
+trace:
+	@rm -f out/trace.jsonl
+	PRAETOR_TRACE=1 $(RUN) eval/find_exceptions.py --master out/vm_constructed.json \
+		--annotations data/constructed --out out/exc_constructed.jsonl >/dev/null
+	$(RUN) eval/show_trace.py --doc $(DOC)
+
+DOC ?= V014_009
 
 # Load the file-based results into SQLite: tenants, users, documents, findings,
 # adjudications and purchase orders. Approvals are never touched by a re-import.
@@ -77,4 +88,4 @@ diagram:
 	$(PY) docs/render.py architecture.html architecture.png
 
 clean:
-	rm -rf .pytest_cache **/__pycache__ out/spend.json out/*.lock
+	rm -rf .pytest_cache **/__pycache__ out/spend.json out/*.lock out/trace.jsonl

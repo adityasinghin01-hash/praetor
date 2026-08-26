@@ -35,7 +35,7 @@ import re
 import time
 from dataclasses import dataclass
 
-from praetor import authority, costguard
+from praetor import authority, costguard, trace
 from praetor.agents import local_reader
 from praetor.agents.reader import MODEL_CHAIN, _api_key
 
@@ -174,18 +174,29 @@ def adjudicate(findings, pattern, context: list[str], client=None,
         # an unreachable adjudicator must never silently resolve an exception.
         return Adjudication("escalate", "escalate", "no model available", False, None)
 
+    def _traced(final, overridden, why=None):
+        with trace.span("adjudicate",
+                        **{"praetor.model": used or "",
+                           "praetor.agent_decision": agent_decision,
+                           "praetor.decision": final,
+                           "praetor.overridden": overridden,
+                           "praetor.override_reason": why or "",
+                           "praetor.privileged": privileged,
+                           "praetor.findings": ",".join(f.code for f in findings)}):
+            pass
+        return Adjudication(final, agent_decision, reason, overridden, used, why)
+
     # The gate has the last word. This is the guarantee: it does not depend on the
     # agent resisting a persuasive note.
     if agent_decision == "resolve":
         if privileged:
-            return Adjudication("escalate", agent_decision, reason, True, used,
-                                "privileged field")
+            return _traced("escalate", True, "privileged field")
         # An authorisation the document claims for itself is an assertion, not
         # evidence. If it names nothing we can check against the buyer's own records,
         # it cannot carry the decision. See praetor/authority.py.
         bad = authority.unverified(context, register, invoice_amount)
         if bad:
-            return Adjudication("escalate", agent_decision, reason, True, used,
-                                f"unverified authority: {bad[0].describe()}")
+            return _traced("escalate", True,
+                           f"unverified authority: {bad[0].describe()}")
 
-    return Adjudication(agent_decision, agent_decision, reason, False, used)
+    return _traced(agent_decision, False)

@@ -17,6 +17,7 @@ import re
 from dataclasses import dataclass, field
 from enum import Enum
 
+from praetor import trace
 from praetor.tenancy import CrossTenantError
 from praetor.types import Finding, InvoiceRecord, VendorPattern
 
@@ -97,6 +98,14 @@ def evaluate(
         ))
 
     action = Action.ESCALATE if findings else Action.PROPOSE_PAY
+    with trace.span("gate.evaluate",
+                    **{"praetor.doc_id": record.doc_id,
+                       "praetor.tenant": record.tenant_id or "",
+                       "praetor.action": action.value,
+                       "praetor.findings": ",".join(f.code for f in findings),
+                       **{f"praetor.account.{k.split('.')[-1]}": v
+                          for k, v in trace.taint(record.bank_account).items()}}):
+        pass
     return GateDecision(record.doc_id, action, findings)
 
 
@@ -110,6 +119,11 @@ def approve(decision: GateDecision, human_id: str) -> GateDecision:
         raise PermissionError("approval requires a human identifier")
     if human_id.startswith("agent:"):
         raise PermissionError("agents cannot approve payments")
+    with trace.span("gate.approve",
+                    **{"praetor.doc_id": decision.doc_id,
+                       "praetor.approved_by": human_id,
+                       "praetor.declassified": True}):
+        pass
     return GateDecision(
         doc_id=decision.doc_id,
         action=Action.APPROVED,

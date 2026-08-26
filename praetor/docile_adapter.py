@@ -16,6 +16,7 @@ import json
 from collections import Counter
 from pathlib import Path
 
+from praetor import trace
 from praetor.types import Field, InvoiceRecord, Provenance
 
 # DocILE fieldtype -> our record attribute. VERIFY against the real corpus.
@@ -63,6 +64,16 @@ def to_record(annotation: dict, doc_hash: str, doc_id: str) -> InvoiceRecord:
         ))
 
     rec.line_item_count = len(line_items)
+
+    # The moment values acquire provenance. Everything downstream inherits the taint
+    # recorded here, so this is where a trace should be able to start.
+    with trace.span("extract",
+                    **{"praetor.doc_id": doc_id,
+                       "praetor.doc_hash": doc_hash,
+                       "praetor.spans_seen": len(annotation.get("field_extractions", [])),
+                       "praetor.line_items": rec.line_item_count,
+                       "praetor.tainted": True}):
+        pass
     return rec
 
 

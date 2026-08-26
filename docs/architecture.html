@@ -154,8 +154,8 @@ footer b{color:var(--dim)}
   </div>
   <div class="meta">
     Google All Things Agentic &middot; <b>Taskmaster</b><br>
-    <span style="color:#8b949e">Runs today:</span> Gemma&nbsp;3 on&#8209;device &middot; Gemini&nbsp;3.5 Flash&#8209;Lite &rarr; Flash<br>
-    <span style="color:#8b949e">Deployment target:</span> Cloud Run &middot; Firestore &middot; Pub/Sub &middot; OTel &rarr; Cloud Trace
+    <span style="color:#8b949e">Runs today:</span> Gemma&nbsp;3 on&#8209;device &middot; Gemini&nbsp;3.5 Flash&#8209;Lite &rarr; Flash &middot; SQLite &middot; OpenTelemetry<br>
+    <span style="color:#8b949e">Deployment target:</span> Cloud Run &middot; Firestore &middot; Pub/Sub &middot; Cloud Trace
   </div>
 </header>
 
@@ -321,7 +321,7 @@ footer b{color:var(--dim)}
     </div>
   </div>
   <div class="znote">There is no code path by which an agent reaches <span class="mono" style="color:#e6edf3">Action.APPROVED</span>.
-    <span class="mono" style="color:#58a6ff">39 tests</span> hold these claims &mdash; the propose/approve boundary, the authority rule and the tenant boundary that is what actually forces the fleet to stay split.</div>
+    <span class="mono" style="color:#58a6ff">104 tests</span> hold these claims &mdash; the propose/approve boundary, the authority rule and the tenant boundary that is what actually forces the fleet to stay split.</div>
 </div>
 
 <!-- ============ vendor master feed ============ -->
@@ -337,6 +337,13 @@ footer b{color:var(--dim)}
     <div class="f">praetor/costguard.py</div>
     <div class="d">Prices every call against Google&rsquo;s published rates and raises <span class="mono">BudgetExceeded</span> <b style="color:#e6edf3">before</b>
       the call that would cross the ceiling. Persisted to disk, so it holds across runs and across days.</div>
+  </div>
+  <div class="cc" style="border-left-color:#58a6ff">
+    <div class="t">Provenance you can audit later</div>
+    <div class="f">praetor/trace.py &middot; OpenTelemetry</div>
+    <div class="d">Every span carries the taint label, the document hash and the span id of the value it touched.
+      That is how you answer, months after the fact, whether a paid figure came off a document nobody trusted.
+      Exports to a file today; Cloud Trace is one exporter away.</div>
   </div>
   <div class="cc" style="border-left-color:#3fb950">
     <div class="t">Tenancy &mdash; why the fleet cannot merge</div>

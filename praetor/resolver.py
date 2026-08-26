@@ -13,9 +13,11 @@ No LLM in this file, by design.
 """
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 
+from praetor import trace
 from praetor.types import Field, InvoiceRecord, Provenance
 
 SPAN_ID_RE = re.compile(r"^p\d+:[0-9._]+$")
@@ -53,6 +55,24 @@ def resolve(
     """
     res = Resolution(record=InvoiceRecord(doc_id=doc_id))
 
+    with trace.span("resolve", **{"praetor.doc_id": doc_id,
+                                  "praetor.doc_hash": doc_hash,
+                                  "praetor.spans_offered": len(spans)}) as sp:
+        _resolve_into(res, reader_output, spans, doc_hash)
+        sp.set_attribute("praetor.fields_resolved",
+                         sum(1 for a in ("vendor_name", "invoice_number", "amount_total",
+                                         "currency", "bank_account", "tax_rate",
+                                         "vendor_address")
+                             if getattr(res.record, a) is not None))
+        sp.set_attribute("praetor.fields_rejected", len(res.rejected))
+        if res.rejected:
+            # The model tried to hand back something that was not a reference. Worth
+            # finding in a trace months later.
+            sp.set_attribute("praetor.rejected", json.dumps(res.rejected)[:900])
+    return res
+
+
+def _resolve_into(res, reader_output, spans, doc_hash) -> None:
     for attr, raw in reader_output.items():
         if not hasattr(res.record, attr):
             res.rejected[attr] = "unknown field"
@@ -76,5 +96,3 @@ def resolve(
             value=spans[ref],
             prov=Provenance(doc_hash=doc_hash, span_id=ref, tainted=True),
         ))
-
-    return res

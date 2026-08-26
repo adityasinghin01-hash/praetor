@@ -5,5 +5,7 @@
 google-genai>=1.0      # the Gemini reader and exception agent
 pytest>=8.0            # the invariants, which are the security claims
 
+opentelemetry-sdk>=1.20  # tracing; optional -- without it tracing is a no-op
+
 # Only needed to re-render docs/architecture.png from its HTML source:
 #   pip install Pillow

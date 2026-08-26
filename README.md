@@ -74,6 +74,17 @@ make demo             # tests + rules baseline + review dashboard
 `make demo` takes about ten seconds, makes **no network calls and costs nothing**, and
 ends by writing `dashboard/index.html` — the queue a human actually works. Open it.
 
+To watch provenance move through the system:
+
+```bash
+make trace                  # or: make trace DOC=V019_007
+```
+
+Tracing is off unless `PRAETOR_TRACE=1` is set, so an ordinary run stays quiet. With it
+on, every span carries the taint label, the document hash and the span id of the value it
+touched — which is how you answer, months later, whether a paid figure came off a
+document nobody trusted. Spans go to a local file; Cloud Trace is one exporter away.
+
 For the queue with working approvals:
 
 ```bash

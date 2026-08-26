@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 
+from praetor import trace
 from praetor.types import Decision, Finding, InvoiceRecord, VendorPattern, Verdict
 
 # How far outside a vendor's historical range an amount may fall before we flag it.
@@ -115,4 +116,13 @@ def evaluate(record: InvoiceRecord, pattern: VendorPattern | None) -> Decision:
             )
 
     verdict = Verdict.EXCEPTION if findings else Verdict.PASS
+    with trace.span("rules.evaluate",
+                    **{"praetor.doc_id": record.doc_id,
+                       "praetor.tenant": record.tenant_id or "",
+                       "praetor.verdict": verdict.value,
+                       "praetor.findings": ",".join(f.code for f in findings),
+                       "praetor.peer_invoices": pattern.n_invoices,
+                       **{f"praetor.account.{k.split('.')[-1]}": v
+                          for k, v in trace.taint(record.bank_account).items()}}):
+        pass
     return Decision(record.doc_id, verdict, findings)
