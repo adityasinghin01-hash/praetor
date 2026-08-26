@@ -7,7 +7,10 @@ does as of the current commit — if you change a number, change it in
 **Checklist before you submit**
 
 - [ ] Repo shared with `testing@devpost.com` **and** `cloudhackathons@google.com`
-      (or made public)
+      — the rules allow a private repo if both are granted access, so invite them
+      through the GitHub web UI (email invites work there; the API needs usernames)
+- [ ] **Google Cloud infrastructure is MANDATORY** — Firestore satisfies it on the free
+      Spark plan, see [FIRESTORE.md](FIRESTORE.md). Show the console in the video.
 - [ ] `docs/architecture.png` uploaded — this is a **required** file upload
 - [ ] Demo video uploaded, under 4 minutes, public link
 - [ ] Blog post published, link added
@@ -103,7 +106,7 @@ The principle is that the model handles references, never values.
 8. A human approves — one act that is both the SOX segregation-of-duties control and the
    declassification step.
 
-39 tests hold those claims. Approving as an agent raises PermissionError, in the tests
+115 tests hold those claims. Approving as an agent raises PermissionError, in the tests
 and in the live queue.
 ```
 
@@ -139,7 +142,7 @@ That the agent was fooled twice and the outcome was correct both times. We did n
 to make the agent un-foolable — we had to make being fooled not matter.
 
 And that the whole thing reproduces from a clean clone with no API key, no cloud account
-and no billing: `make install && make demo` gives 39 passing tests, the rules baseline,
+and no billing: `make install && make demo` gives 115 passing tests, the rules baseline,
 and the full review queue.
 ```
 
@@ -160,8 +163,8 @@ And that a measurement you can't reproduce is worse than no measurement.
 ## What's next for PRAETOR
 
 ```
-Deploy to Cloud Run and report throughput, peak concurrency and real dollar cost from a
-Pub/Sub fan-out run, with taint labels visible in Cloud Trace.
+Deploy the service itself to Cloud Run — state already runs on Cloud Firestore — and
+report throughput, peak concurrency and real dollar cost from a Pub/Sub fan-out run.
 
 Close the remaining gap in the authority rule: a document that is persuasive while naming
 no checkable reference at all is still not caught.
@@ -173,7 +176,7 @@ not write, and report that as the headline number.
 ## Built with
 
 ```
-python, google-gemini, gemma, ollama, google-adk, cloud-run, opentelemetry, xgboost, scikit-learn
+python, google-gemini, gemma, ollama, google-genai-sdk, google-cloud-firestore, sqlite, opentelemetry
 ```
 
 ---

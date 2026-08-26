@@ -235,12 +235,16 @@ tests/          the invariants
 ## Tech stack
 
 Gemini 3.5 (`gemini-3.5-flash-lite`, falling back to `gemini-3.5-flash`) · Gemma 3 via
-Ollama · Google ADK · OpenTelemetry. Every model in the fallback chain is Gemini 3.5+;
+Ollama · Google GenAI SDK · Cloud Firestore · OpenTelemetry. Every model in the chain is Gemini 3.5+;
 `gemini-3.1-*` does not meet the hackathon requirement and `gemini-flash-latest` is an
 unversioned alias whose version cannot be stated on a submission form.
 
-**Not yet deployed.** Cloud Run, Firestore, Pub/Sub and Cloud Trace are the deployment
-target, and the diagram labels them as such. Everything above runs locally today.
+State lives behind one module, so it runs on **SQLite** by default and on **Cloud
+Firestore** with `PRAETOR_BACKEND=firestore` — see [docs/FIRESTORE.md](docs/FIRESTORE.md).
+The default stays local so `make demo` works with no account and no card.
+
+**Not yet deployed to Cloud Run.** That and Pub/Sub remain the deployment target, and the
+diagram labels them as such.
 
 ## Why it is shaped this way
 
