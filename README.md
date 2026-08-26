@@ -179,9 +179,10 @@ Nothing in this repo is an industry estimate or a figure typed in by hand.
 
 | Claim | Command | Needs a key? |
 |---|---|---|
-| 39 invariants pass | `make test` | no |
+| 115 invariants pass | `make test` | no |
 | Rules baseline: **P 0.800 · R 0.963 · F1 0.874** | `make rules` | no |
 | Corpus regenerates bit-for-bit | `make verify` | no |
+| Kernel throughput: **4,112 docs/second**, one core | `make volume` | no |
 | Dashboard: 65 flagged → 47 human, precision 1.000 | `make dashboard` | no |
 | Undefended injection rate: **60% (12/20)** | `make attacks` | yes |
 | Agent removes **28%** of human touches, 0 wrong | `make adjudicate` | yes |

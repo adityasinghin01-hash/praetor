@@ -7,6 +7,7 @@
 #   make serve      the review queue with live approvals (http://127.0.0.1:8000)
 #   make trace      run the kernel with tracing on and print one document's spans
 #   make readpath   the real path end to end: reader -> resolver -> rules (free)
+#   make volume     5,000 documents through the kernel: throughput and concurrency
 #   make verify     everything that needs no API key, end to end
 #
 # Targets that spend nothing are the default. The two that call the Gemini API
@@ -16,7 +17,7 @@
 PY := $(shell [ -x .venv/bin/python ] && echo .venv/bin/python || echo python3)
 RUN := PYTHONPATH=. $(PY)
 
-.PHONY: help install test demo verify corpus rules db dashboard serve trace readpath attacks adjudicate diagram clean
+.PHONY: help install test demo verify corpus rules db dashboard serve trace readpath volume attacks adjudicate diagram clean
 
 help:
 	@sed -n '2,10p' Makefile | sed 's/^# \?//'
@@ -41,6 +42,13 @@ rules:
 		--annotations data/constructed --out out/exc_constructed.jsonl
 	$(RUN) eval/run_eval.py --truth data/constructed_truth.jsonl \
 		--predictions out/exc_constructed.jsonl
+
+# Throughput and concurrency for the deterministic kernel. Generates its own corpus
+# under out/volume the first time. No API calls, so it costs nothing.
+volume:
+	$(RUN) eval/run_volume.py --docs $(DOCS)
+
+DOCS ?= 5000
 
 # The real path end to end: quarantined reader -> resolver -> rules. Free on local
 # Gemma; add --remote to use Gemini instead (one call per document, capped by costguard).

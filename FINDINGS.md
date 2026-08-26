@@ -314,3 +314,50 @@ Extraction accuracy is a property of whichever model you point at the documents,
 will change with every model release. The rejection count is a property of the
 architecture, and it does not. 25 of 25 attempts to hand back a value instead of a
 reference were refused, on the live path, by 80 lines of Python with no model in them.
+
+---
+
+## 11. Volume: the kernel is not the bottleneck, and parallelising it makes things worse
+
+5,000 constructed invoices through the deterministic path — extraction, provenance and
+the rules — on one laptop. Reproduce: `make volume`.
+
+| | |
+|---|---|
+| Documents | 5,000 |
+| Passed / exceptions | 4,098 / 902 |
+| **Serial throughput** | **4,112 documents/second** (one core) |
+| Parallel throughput | 3,125 documents/second (8 workers) |
+| Speedup from 8 workers | **0.8x — slower** |
+| Wall clock | 1.6s |
+| Cost | Rs 0 |
+
+**Parallelism makes it slower, and that is the result rather than a disappointment.**
+Each document costs about 0.24ms, so handing it to another process costs more than doing
+it. The spec scoped this as a Pub/Sub fan-out across Cloud Run instances; on this
+evidence that would have bought nothing, because there is nothing to distribute.
+
+### Where the time actually goes
+
+| Stage | Throughput |
+|---|---|
+| Deterministic kernel | 4,112 docs/second |
+| LLM adjudication | 0.56 docs/second ([§10](#10-the-guarantee-measured-on-the-live-path)) |
+| **Ratio** | **~7,300x** |
+
+A day's volume for a mid-size processor — 50,000 invoices — takes **12 seconds on one
+core**. The model is four orders of magnitude slower.
+
+That number is the architecture's economic argument, and it was not designed for; it fell
+out of measuring. The reason to send the agent 18.6% of documents rather than all of them
+is not caution about correctness — the gate handles that. It is that the model is the only
+expensive thing in the system, so the design's job is to keep documents away from it.
+Every rule that resolves a case deterministically removes a call that costs ~7,300 times
+more than the check that replaced it.
+
+**Caveat on the measurement.** The first version of this reported the serial baseline at
+8,580 documents/second and a 0.3x speedup. Both were wrong: the worker initialiser that
+loads the vendor master only runs in worker processes, so in the parent every document
+short-circuited to "skipped" and the baseline was timing almost nothing while looking
+three times faster than the real work. The assertion now in `run_volume.py` fails the run
+if the baseline skips everything.
