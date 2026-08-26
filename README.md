@@ -5,6 +5,11 @@ hijacked by the document it is reading.
 
 Built for the Google **All Things Agentic Hackathon** (Taskmaster track).
 
+**Live:** [https://praetor-836128159455.asia-south1.run.app](https://praetor-836128159455.asia-south1.run.app) — running on Cloud Run in `asia-south1`, with state in Cloud
+Firestore. Sign in with `reviewer@acme-industries.test` / `praetor`; the sign-in page
+lists the other seeded accounts. The data is synthetic and nothing served there calls a
+model, so the deployment cannot spend money.
+
 > **New to the repo? Read [TEAMMATE.md](TEAMMATE.md) instead.** It assumes no prior
 > context and walks through everything step by step.
 
@@ -243,8 +248,8 @@ State lives behind one module, so it runs on **SQLite** by default and on **Clou
 Firestore** with `PRAETOR_BACKEND=firestore` — see [docs/FIRESTORE.md](docs/FIRESTORE.md).
 The default stays local so `make demo` works with no account and no card.
 
-**Not yet deployed to Cloud Run.** That and Pub/Sub remain the deployment target, and the
-diagram labels them as such.
+**Deployed on Cloud Run**, `asia-south1`, state in Cloud Firestore. Pub/Sub fan-out for
+a volume run is still future work.
 
 ## Why it is shaped this way
 

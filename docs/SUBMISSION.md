@@ -9,8 +9,8 @@ does as of the current commit — if you change a number, change it in
 - [ ] Repo shared with `testing@devpost.com` **and** `cloudhackathons@google.com`
       — the rules allow a private repo if both are granted access, so invite them
       through the GitHub web UI (email invites work there; the API needs usernames)
-- [ ] **Google Cloud infrastructure is MANDATORY** — Firestore satisfies it on the free
-      Spark plan, see [FIRESTORE.md](FIRESTORE.md). Show the console in the video.
+- [x] **Google Cloud infrastructure** — deployed on Cloud Run (`asia-south1`) with
+      state in Cloud Firestore. Show both consoles in the video.
 - [ ] `docs/architecture.png` uploaded — this is a **required** file upload
 - [ ] Demo video uploaded, under 4 minutes, public link
 - [ ] Blog post published, link added
@@ -226,6 +226,7 @@ measurements that had to be corrected.
 
 | Field | Value |
 |---|---|
+| Working project URL | `https://praetor-836128159455.asia-south1.run.app` |
 | Repository | `https://github.com/adityasinghin01-hash/praetor` |
 | Architecture diagram | upload `docs/architecture.png` |
 | Blog post | *(paste published URL)* |
