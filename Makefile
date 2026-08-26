@@ -3,6 +3,7 @@
 #   make install    create .venv and install dependencies
 #   make test       run the invariants (no API key, no network)
 #   make demo       full offline demo: rules baseline + review dashboard
+#   make db         load results into SQLite (tenants, users, approvals)
 #   make serve      the review queue with live approvals (http://127.0.0.1:8000)
 #   make verify     everything that needs no API key, end to end
 #
@@ -13,7 +14,7 @@
 PY := $(shell [ -x .venv/bin/python ] && echo .venv/bin/python || echo python3)
 RUN := PYTHONPATH=. $(PY)
 
-.PHONY: help install test demo verify corpus rules dashboard serve attacks adjudicate diagram clean
+.PHONY: help install test demo verify corpus rules db dashboard serve attacks adjudicate diagram clean
 
 help:
 	@sed -n '2,10p' Makefile | sed 's/^# \?//'
@@ -39,12 +40,17 @@ rules:
 	$(RUN) eval/run_eval.py --truth data/constructed_truth.jsonl \
 		--predictions out/exc_constructed.jsonl
 
+# Load the file-based results into SQLite: tenants, users, documents, findings,
+# adjudications and purchase orders. Approvals are never touched by a re-import.
+db:
+	$(RUN) eval/build_db.py
+
 dashboard:
 	$(RUN) dashboard/build.py
 	@echo "open dashboard/index.html"
 
 # The queue with working approvals. Calls the real praetor.gate.approve().
-serve:
+serve: db
 	$(RUN) dashboard/serve.py
 
 demo: test rules dashboard
@@ -71,4 +77,4 @@ diagram:
 	$(PY) docs/render.py architecture.html architecture.png
 
 clean:
-	rm -rf .pytest_cache **/__pycache__ out/spend.json
+	rm -rf .pytest_cache **/__pycache__ out/spend.json out/*.lock

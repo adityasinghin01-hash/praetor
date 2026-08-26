@@ -8,6 +8,12 @@ impossible rather than merely unlikely.
 Spend is persisted to out/spend.json, so the ceiling holds across separate runs and
 across days. It is not reset by restarting a script.
 
+It is also not reset by damaging the file. An earlier version swallowed a parse error
+and returned a zero Spend, so a truncated spend.json read as "nothing spent" and handed
+back the whole ceiling -- the money control failing open. Now a file that exists but
+cannot be read raises CorruptSpendFile and every call is refused until a person looks at
+it. Writes go through praetor.durable, so the truncation that caused it cannot recur.
+
 Rates: https://ai.google.dev/gemini-api/docs/pricing (checked 25 Aug 2026)
 """
 from __future__ import annotations
@@ -16,6 +22,8 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
+
+from praetor.durable import locked, write_json_atomic
 
 USD_PER_INR = 88.0  # for reporting only
 
@@ -38,6 +46,10 @@ class BudgetExceeded(RuntimeError):
     """Raised before a call that would push spend past the ceiling."""
 
 
+class CorruptSpendFile(RuntimeError):
+    """The ledger exists but cannot be read. Refuse to spend until a person looks."""
+
+
 @dataclass
 class Spend:
     usd: float = 0.0
@@ -51,17 +63,27 @@ class Spend:
 
 
 def _load() -> Spend:
-    if SPEND_FILE.exists():
-        try:
-            return Spend(**json.loads(SPEND_FILE.read_text()))
-        except Exception:  # noqa: BLE001
-            pass
-    return Spend()
+    """Read the ledger. A missing file means zero; an unreadable one means STOP.
+
+    The distinction is the whole point. "No ledger yet" and "the ledger is damaged" look
+    similar and mean opposite things, and conflating them is how a spending ceiling
+    silently disappears.
+    """
+    if not SPEND_FILE.exists():
+        return Spend()
+    try:
+        raw = json.loads(SPEND_FILE.read_text())
+        return Spend(**raw)
+    except Exception as e:  # noqa: BLE001
+        raise CorruptSpendFile(
+            f"{SPEND_FILE} exists but could not be read ({e}). Refusing to spend. "
+            f"Inspect it, then delete it deliberately if you accept losing the running "
+            f"total."
+        ) from e
 
 
 def _save(s: Spend) -> None:
-    SPEND_FILE.parent.mkdir(parents=True, exist_ok=True)
-    SPEND_FILE.write_text(json.dumps(s.__dict__, indent=1))
+    write_json_atomic(SPEND_FILE, s.__dict__)
 
 
 def price(model: str, in_tok: int, out_tok: int) -> float:
@@ -71,7 +93,8 @@ def price(model: str, in_tok: int, out_tok: int) -> float:
 
 def check(model: str, prompt_chars: int, expected_out_tokens: int = 100) -> None:
     """Refuse the call if it would cross the ceiling. Call BEFORE spending."""
-    s = _load()
+    with locked(SPEND_FILE):
+        s = _load()
     projected = s.usd + price(model, int(prompt_chars / 3.5), expected_out_tokens)
     if projected * USD_PER_INR > CEILING_INR:
         raise BudgetExceeded(
@@ -82,18 +105,27 @@ def check(model: str, prompt_chars: int, expected_out_tokens: int = 100) -> None
 
 
 def record(model: str, in_tok: int, out_tok: int) -> Spend:
-    """Record actual usage after a call."""
-    s = _load()
-    s.usd += price(model, in_tok, out_tok)
-    s.calls += 1
-    s.input_tokens += in_tok
-    s.output_tokens += out_tok
-    _save(s)
-    return s
+    """Record actual usage after a call.
+
+    Read-modify-write under a lock: two runs recording at once would otherwise each read
+    the same total and one would overwrite the other, undercounting spend in exactly the
+    situation -- parallel work -- where the ceiling matters most.
+    """
+    with locked(SPEND_FILE):
+        s = _load()
+        s.usd += price(model, in_tok, out_tok)
+        s.calls += 1
+        s.input_tokens += in_tok
+        s.output_tokens += out_tok
+        _save(s)
+        return s
 
 
 def report() -> str:
-    s = _load()
+    try:
+        s = _load()
+    except CorruptSpendFile as e:
+        return f"SPEND LEDGER UNREADABLE -- all calls refused. {e}"
     return (f"spent Rs {s.inr:.2f} (${s.usd:.4f}) over {s.calls} calls  "
             f"[{s.input_tokens:,} in / {s.output_tokens:,} out]  "
             f"ceiling Rs {CEILING_INR:.2f}")

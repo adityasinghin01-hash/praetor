@@ -16,11 +16,16 @@ Every number comes from a results file. Nothing is hardcoded.
 """
 from __future__ import annotations
 
+import argparse
 import json
+import sys
 from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from praetor import store  # noqa: E402
 
 
 def load_jsonl(p: Path) -> list[dict]:
@@ -35,13 +40,45 @@ def result(name: str) -> Path:
     return fresh if fresh.exists() else ROOT / "results" / name
 
 
-def main() -> None:
+def rows_from_db(tenant: str) -> tuple[list[dict], list[str]]:
+    """Live state. The database is what the queue actually serves from."""
+    truth = {r["doc_id"]: r for r in load_jsonl(ROOT / "data/constructed_truth.jsonl")}
+    conn = store.connect()
+    known = [t["id"] for t in store.tenants(conn)]
+    rows = []
+    for r in store.queue(conn, tenant):
+        t = truth.get(r["doc_id"], {})
+        evidence = {f["field"]: {"value": f["value"], "span_id": f["span_id"],
+                                 "doc_hash": (r["doc_hash"] or "")[:12],
+                                 "tainted": bool(f["tainted"])}
+                    for f in r["findings"] if f["value"]}
+        rows.append({
+            "doc_id": r["doc_id"],
+            "vendor": r["vendor_key"] or "?",
+            "peers": r["peer_invoices"] or 0,
+            "codes": [f["code"] for f in r["findings"]],
+            "findings": [{"code": f["code"], "field": f["field"],
+                          "detail": f["detail"] or ""} for f in r["findings"]],
+            "evidence": evidence,
+            "decision": r["decision"],
+            "agent_decision": r["agent_decision"],
+            "overridden": bool(r["overridden"]),
+            "override_reason": r["override_reason"],
+            "reason": r["reason"] or "",
+            "correct": t.get("correct_action", "?"),
+            "injected": bool(t.get("injected")),
+            "approved_by": r["approved_by"],
+        })
+    return rows, known
+
+
+def rows_from_files() -> tuple[list[dict], list[str]]:
+    """No database yet. `make demo` must still produce a full queue from files alone."""
     truth = {r["doc_id"]: r for r in load_jsonl(ROOT / "data/constructed_truth.jsonl")}
     adj = {}
     for r in load_jsonl(result("adjudication.jsonl")):
         adj.setdefault(r["doc_id"], r)
     exceptions = {r["doc_id"]: r for r in load_jsonl(result("exc_constructed.jsonl"))}
-    approvals = {r["doc_id"]: r for r in load_jsonl(ROOT / "out/approvals.jsonl")}
 
     rows = []
     for doc_id, a in sorted(adj.items()):
@@ -61,8 +98,22 @@ def main() -> None:
             "reason": a.get("reason", ""),
             "correct": t.get("correct_action", "?"),
             "injected": bool(t.get("injected")),
-            "approved_by": approvals.get(doc_id, {}).get("approved_by"),
+            "approved_by": None,
         })
+    return rows, []
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--tenant", default=store.DEFAULT_TENANT)
+    args = ap.parse_args()
+
+    if store.DB_PATH.exists():
+        rows, known = rows_from_db(args.tenant)
+        source = f"database &middot; tenant <b>{args.tenant}</b>"
+    else:
+        rows, known = rows_from_files()
+        source = "results files (no database yet &mdash; run <code>eval/build_db.py</code>)"
 
     total = len(rows)
     resolved = [r for r in rows if r["decision"] == "resolve"]
@@ -73,13 +124,15 @@ def main() -> None:
     prec = len(right) / len(resolved) if resolved else 0.0
 
     out = ROOT / "dashboard" / "index.html"
-    out.write_text(render(rows, total, resolved, escalated, overrides, wrong, prec))
+    out.write_text(render(rows, total, resolved, escalated, overrides, wrong, prec,
+                          source, known, args.tenant))
     print(f"wrote {out}")
     print(f"  {total} exceptions | {len(resolved)} resolved | {len(escalated)} escalated "
           f"| {len(overrides)} gate override(s) | precision {prec:.3f}")
 
 
-def render(rows, total, resolved, escalated, overrides, wrong, prec) -> str:
+def render(rows, total, resolved, escalated, overrides, wrong, prec,
+           source="", known=(), tenant="") -> str:
     def card(label, value, sub="", tone=""):
         return (f'<div class="card {tone}"><div class="v">{value}</div>'
                 f'<div class="l">{label}</div><div class="s">{sub}</div></div>')
@@ -141,6 +194,17 @@ def render(rows, total, resolved, escalated, overrides, wrong, prec) -> str:
 <td class="reason">{r['reason'][:150]}</td>
 <td>{act}</td></tr>""")
 
+    if len(known) > 1:
+        opts = "".join(
+            f'<option value="{t}"{" selected" if t == tenant else ""}>{t}</option>'
+            for t in known)
+        tenant_picker = (f'&nbsp;&nbsp;client <select id="tsel" '
+                         f'onchange="location.search=\'?tenant=\'+this.value">'
+                         f'{opts}</select>')
+    else:
+        tenant_picker = ""
+    tenant_json = json.dumps(tenant)
+
     return f"""<!doctype html><meta charset="utf-8">
 <title>PRAETOR review queue</title>
 <style>
@@ -153,9 +217,10 @@ header {{ padding:26px 32px 18px; border-bottom:1px solid var(--line); }}
 h1 {{ margin:0; font-size:19px; letter-spacing:-.01em; }}
 header p {{ margin:6px 0 0; color:var(--dim); font-size:13px; max-width:900px; }}
 .who {{ margin-top:12px; font-size:12.5px; color:var(--dim); }}
-.who input {{ background:#0b0f14; border:1px solid var(--line); color:var(--tx);
+.who input, .who select {{ background:#0b0f14; border:1px solid var(--line); color:var(--tx);
   border-radius:6px; padding:5px 9px; font:12.5px ui-monospace,Menlo,monospace;
-  width:230px; margin-left:6px; }}
+  margin-left:6px; }}
+.who input {{ width:230px; }}
 .stats {{ display:flex; gap:14px; padding:22px 32px; flex-wrap:wrap; }}
 .card {{ background:var(--panel); border:1px solid var(--line); border-radius:10px;
   padding:16px 18px; min-width:158px; flex:1; }}
@@ -204,7 +269,9 @@ shown carries the span and document hash it came from, so approving is a
 declassification with the evidence attached &mdash; not a rubber stamp.
 Every figure is read from a results file, not written by hand.</p>
 <div class="who">approve as <input id="hid" value="aditya@kiet" spellcheck="false">
-&nbsp;<span class="s">try <code>agent:exception_resolver</code> to see the boundary refuse</span></div>
+{tenant_picker}
+&nbsp;<span class="s">try <code>agent:exception_resolver</code>, or
+<code>auditor@acme-industries.test</code>, to see the boundary refuse</span></div>
 </header>
 <div class="stats">{stats}</div>
 <table>
@@ -212,11 +279,12 @@ Every figure is read from a results file, not written by hand.</p>
 <th>outcome</th><th>agent's reasoning</th><th>action</th></tr>
 {''.join(trs)}
 </table>
-<footer>Generated {datetime.now():%d %b %Y %H:%M} &middot;
+<footer>Generated {datetime.now():%d %b %Y %H:%M} from {source} &middot;
 constructed corpus, synthetic purchase orders &mdash; labelled as such.<br>
 Approvals are live only under <code>python3 dashboard/serve.py</code>; opening this file
 directly shows the queue read-only.</footer>
 <script>
+var TENANT = {tenant_json};
 document.querySelectorAll("button.ap").forEach(function (b) {{
   b.addEventListener("click", function () {{
     var doc = b.dataset.doc;
@@ -225,7 +293,7 @@ document.querySelectorAll("button.ap").forEach(function (b) {{
     b.disabled = true; out.className = "s res"; out.textContent = "approving\\u2026";
     fetch("/approve", {{
       method: "POST", headers: {{ "Content-Type": "application/json" }},
-      body: JSON.stringify({{ doc_id: doc, human_id: hid }})
+      body: JSON.stringify({{ doc_id: doc, human_id: hid, tenant: TENANT }})
     }}).then(function (r) {{ return r.json().then(function (j) {{ return [r.status, j]; }}); }})
       .then(function (p) {{
         var status = p[0], j = p[1];
