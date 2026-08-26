@@ -349,7 +349,18 @@ def main() -> None:
     conn = db().connect()
     known = [t["id"] for t in db().tenants(conn)]
     if not known:
-        sys.exit("No tenants in the database. Run:  python3 eval/build_db.py")
+        # A freshly deployed instance has an empty store. Seed it from the committed
+        # results rather than refusing to boot -- Cloud Run health-checks the port, and a
+        # container that exits because data is missing never becomes reachable enough to
+        # be told about it.
+        print("empty store; seeding from results/ ...", flush=True)
+        from eval.build_db import DEMO_PASSWORD, load_into, pick
+        load_into(db(), conn, store.DEFAULT_TENANT,
+                  pick("exc_constructed.jsonl"), pick("adjudication.jsonl"),
+                  ROOT / "data/po_register.json")
+        known = [t["id"] for t in db().tenants(conn)]
+        print(f"seeded {len(known)} client(s); sign in with password {DEMO_PASSWORD}",
+              flush=True)
     purged = auth.purge_expired(conn)
     print(f"PRAETOR review queue  ->  http://127.0.0.1:{port}")
     print(f"clients               ->  {', '.join(known)}")
