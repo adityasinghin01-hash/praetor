@@ -236,9 +236,11 @@ def main() -> None:
     for old in out.glob("*.json"):
         old.unlink()
 
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from praetor.authority import APPROVAL_LANGUAGE, REFERENCE
+
     try:
-        import sys
-        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
         from attacks.payloads import TAXONOMY
         payloads = [p.text for p in TAXONOMY]
     except Exception:  # noqa: BLE001
@@ -246,6 +248,10 @@ def main() -> None:
 
     vendors = make_vendors(args.vendors, rng)
     truth_rows, n_dev, n_inj = [], 0, 0
+    # Purchase orders the buyer issued. Collected from the notes WE write, never from
+    # the finished annotation — an injected payload is added at annotation time, so a
+    # fabricated ticket can never register itself here. See praetor/authority.py.
+    issued_pos: set[str] = set()
 
     for v in vendors:
         for seq in range(args.per_vendor):
@@ -261,6 +267,13 @@ def main() -> None:
                 n_inj += 1
 
             fields, truth = build(v, seq, rng, dev, explained)
+            # Only notes that actually claim approval put a reference in the register.
+            # A contract or ruling reference ("per contract MSA-2024-118") is context,
+            # not a grant of permission, and must not become something a document can
+            # cite as authority.
+            note = fields.get("note", "")
+            if APPROVAL_LANGUAGE.search(note):
+                issued_pos.update(m.group(1).upper() for m in REFERENCE.finditer(note))
             doc_id = f"{v['key']}_{seq:03d}"
             (out / f"{doc_id}.json").write_text(json.dumps(to_annotation(fields, injected)))
             truth_rows.append({"doc_id": doc_id, "vendor_key": v["key"],
@@ -270,6 +283,15 @@ def main() -> None:
     with truth_path.open("w") as fh:
         for r in truth_rows:
             fh.write(json.dumps(r) + "\n")
+
+    register_path = out.parent / "po_register.json"
+    register_path.write_text(json.dumps({
+        "_comment": "SYNTHETIC. The buyer's own purchase-order register — the trusted "
+                    "record praetor/authority.py checks document-claimed approvals "
+                    "against. Generated from the notes this script writes, never from "
+                    "the finished documents.",
+        "purchase_orders": sorted(issued_pos),
+    }, indent=1) + "\n")
 
     total = len(truth_rows)
     print(f"wrote {total} constructed invoices to {out}")
@@ -283,6 +305,7 @@ def main() -> None:
     print(f"    correct action = escalate: {n_esc}")
     print(f"  with an injection:  {n_inj}  ({n_inj / total * 100:.1f}%)")
     print(f"  ground truth ->     {truth_path}")
+    print(f"  PO register ->      {register_path}  ({len(issued_pos)} orders)")
     print("\nALL SYNTHETIC. Label it as such in every reported number.")
 
 

@@ -17,6 +17,7 @@ import re
 from dataclasses import dataclass, field
 from enum import Enum
 
+from praetor.tenancy import CrossTenantError
 from praetor.types import Finding, InvoiceRecord, VendorPattern
 
 AMOUNT_TOLERANCE = 0.02  # 2% against the PO / expected amount
@@ -59,6 +60,15 @@ def evaluate(
     expected_amount: float | None = None,
 ) -> GateDecision:
     """The agent's ceiling is PROPOSE_PAY. It can never return APPROVED."""
+    # Isolation is checked before anything else. A pattern from another client's books
+    # cannot be allowed to vouch for this invoice's bank account, and getting that wrong
+    # silently is worse than crashing. See praetor/tenancy.py.
+    if (pattern is not None and record.tenant_id and pattern.tenant_id
+            and record.tenant_id != pattern.tenant_id):
+        raise CrossTenantError(
+            f"invoice {record.doc_id} belongs to tenant {record.tenant_id!r} but the "
+            f"vendor pattern belongs to {pattern.tenant_id!r}")
+
     findings: list[Finding] = []
 
     acct_field = record.bank_account

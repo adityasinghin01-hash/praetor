@@ -1,0 +1,6 @@
+{
+ "_comment": "SYNTHETIC. The buyer's own purchase-order register \u2014 the trusted record praetor/authority.py checks document-claimed approvals against. Generated from the notes this script writes, never from the finished documents.",
+ "purchase_orders": [
+  "PO-68910"
+ ]
+}

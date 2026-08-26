@@ -30,6 +30,7 @@ class Field:
 class InvoiceRecord:
     """One invoice, after extraction. Fields are optional: real documents omit things."""
     doc_id: str
+    tenant_id: str | None = None   # whose books this invoice belongs to
     vendor_name: Field | None = None
     invoice_number: Field | None = None
     amount_total: Field | None = None
@@ -50,8 +51,13 @@ class VendorPattern:
 
     Nothing here is invented — every value is the mode or percentile of real
     documents in the corpus. See eval/build_vendor_master.py.
+
+    `tenant_id` is which client company's books this pattern belongs to. An AP
+    processor runs many, and a supplier's "known account" only means anything inside
+    one of them. See praetor/tenancy.py.
     """
     vendor_key: str
+    tenant_id: str | None = None
     n_invoices: int = 0
     bank_accounts: set[str] = field(default_factory=set)
     seen_invoice_numbers: set[str] = field(default_factory=set)
