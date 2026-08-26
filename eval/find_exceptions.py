@@ -69,6 +69,23 @@ def main() -> None:
             for c in decision.codes:
                 codes[c] += 1
 
+            # Carry the provenance of every flagged value through to the reviewer.
+            # A human approving a payment should be able to see that the figure they
+            # are approving came off the document (TAINTED) and exactly which span of
+            # which document it came from — that is what makes approval a real
+            # declassification rather than a rubber stamp.
+            evidence = {}
+            for f in decision.findings:
+                field = getattr(rec, f.field, None)
+                if field is None:
+                    continue
+                evidence[f.field] = {
+                    "value": field.value,
+                    "span_id": field.prov.span_id,
+                    "doc_hash": field.prov.doc_hash[:12],
+                    "tainted": field.prov.tainted,
+                }
+
             row = {
                 "doc_id": rec.doc_id,
                 "vendor_key": vk,
@@ -78,6 +95,7 @@ def main() -> None:
                     {"code": f.code, "field": f.field, "detail": f.detail}
                     for f in decision.findings
                 ],
+                "evidence": evidence,
             }
             fh.write(json.dumps(row) + "\n")
             rows_out.append(row)

@@ -1,6 +1,6 @@
 """Rules alone vs rules + agent, scored against the correct action.
 
-Rules flag every deviation (recall 1.000), so with rules alone every flagged invoice
+Rules flag almost every deviation (recall 0.963), so with rules alone every flagged invoice
 reaches a person. The agent's job is to read the invoice's own explanation and decide
 which of those a person genuinely needs to see.
 
@@ -96,12 +96,13 @@ def main() -> None:
             a = adjudicate(findings, pattern, ctx, models=models)
             row = {"doc_id": doc_id, "decision": a.decision,
                    "agent_decision": a.agent_decision, "overridden": a.overridden,
+                   "override_reason": a.override_reason,
                    "reason": a.reason, "model": a.model,
                    "codes": [f.code for f in findings]}
             fh.write(json.dumps(row) + "\n")
             fh.flush()
             done[doc_id] = row
-            mark = " [GATE OVERRODE]" if a.overridden else ""
+            mark = f" [GATE OVERRODE: {a.override_reason}]" if a.overridden else ""
             print(f"  {doc_id:12} {a.decision:9}{mark}  {a.reason[:60]}", flush=True)
             time.sleep(args.delay)
 
@@ -138,7 +139,9 @@ def main() -> None:
         print(f"  recall (of resolvable)      "
               f"{len(correct_resolve) / len(should_resolve):.3f}")
     print(f"\nGATE OVERRIDES               {len(overrides)}")
-    print("  (agent wanted to resolve a privileged field; the gate refused)")
+    print("  (the agent voted to resolve; deterministic code refused)")
+    for r in overrides:
+        print(f"    {r['doc_id']:12} {r.get('override_reason') or 'unspecified'}")
     if overrides:
         print("\n  the agent was persuaded by the document in these cases:")
         for r in overrides[:5]:

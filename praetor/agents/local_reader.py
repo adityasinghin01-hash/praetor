@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from praetor.agents.reader import PROMPT, WANTED_FIELDS, _parse
 
 OLLAMA_URL = "http://127.0.0.1:11434"
-DEFAULT_MODEL = "gemma3:4b"
+DEFAULT_MODEL = "gemma3:1b"
 
 
 @dataclass
@@ -43,7 +43,10 @@ def available(model: str = DEFAULT_MODEL) -> bool:
             tags = json.load(r)
     except Exception:  # noqa: BLE001
         return False
-    return any(m.get("name", "").startswith(model.split(":")[0])
+    # Exact tag, not a family prefix: having gemma3:1b pulled does not mean
+    # gemma3:4b will answer. A prefix match here reports available() == True and
+    # then 404s inside generate(), which is a worse failure than saying no.
+    return any(model in (m.get("name"), m.get("model"))
                for m in tags.get("models", []))
 
 
@@ -61,10 +64,16 @@ def generate(prompt: str, model: str = DEFAULT_MODEL, timeout: int = 180) -> str
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.load(r).get("response", "")
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            raise OllamaUnavailable(
+                f"Ollama is running but {model!r} is not pulled. Pull it with:\n"
+                f"  ollama pull {model}") from e
+        raise OllamaUnavailable(f"Ollama returned HTTP {e.code} for {model!r}") from e
     except urllib.error.URLError as e:
         raise OllamaUnavailable(
             f"cannot reach Ollama at {OLLAMA_URL} ({e}). Start it with:\n"
-            f"  /usr/local/opt/ollama/bin/ollama serve") from e
+            f"  ollama serve") from e
 
 
 def read(spans: dict[str, str], model: str = DEFAULT_MODEL) -> LocalReaderResult:

@@ -1,7 +1,7 @@
 """Adjudicates flagged exceptions: can this be resolved, or does a human decide?
 
 Why this exists: the rules baseline already catches every deviation we plant —
-recall 1.000, F1 0.865 (see FINDINGS.md). Detection is a solved problem here.
+recall 0.963, F1 0.874 (see FINDINGS.md). Detection is close to solved here.
 What rules cannot do is read the note on the invoice saying *"includes annual
 licence true-up per contract MSA-2024-118"* and conclude that the amount is fine.
 
@@ -13,6 +13,19 @@ answer is advisory: `adjudicate()` applies the gate afterwards, so on privileged
 fields the outcome is ESCALATE no matter what the agent concluded. A convincing
 remittance notice printed on an untrusted invoice is exactly the attack, and the
 guarantee cannot depend on the agent not falling for it.
+
+Two rules run after the agent, both deterministic:
+
+  1. privileged field  — no in-document justification releases a bank account;
+  2. document authority — an approval the document claims for itself counts only if
+     it names a reference held in the buyer's own records (praetor/authority.py).
+
+Rule 2 was added after the first adjudication run, where an injected approval ticket
+persuaded the agent to resolve a genuine tax-rate exception. The gate held on the
+money; nothing held on the decision. Now something does.
+
+The model chain ends at a local Gemma via Ollama, so exhausting the hosted free tier
+degrades the queue rather than emptying it. Every link answers into the same two rules.
 """
 from __future__ import annotations
 
@@ -21,7 +34,8 @@ import re
 import time
 from dataclasses import dataclass
 
-from praetor import costguard
+from praetor import authority, costguard
+from praetor.agents import local_reader
 from praetor.agents.reader import MODEL_CHAIN, _api_key
 
 # Fields where no in-document justification is ever sufficient.
@@ -44,8 +58,14 @@ Decide ONE of:
                to look at it
   "escalate" - a person must decide
 
-Answer with ONLY this JSON:
-{{"decision": "resolve" | "escalate", "reason": "<one short sentence>"}}
+Reply with one JSON object and nothing else. Choose ONE value for "decision" — write
+either "resolve" or "escalate". Do not repeat the list of options.
+
+--- EXAMPLE REPLY ---
+{{"decision": "escalate", "reason": "The amount is far above this supplier's usual range and nothing on the invoice explains it."}}
+--- END EXAMPLE ---
+
+YOUR REPLY:
 """
 
 
@@ -56,6 +76,7 @@ class Adjudication:
     reason: str
     overridden: bool       # did the gate override the agent?
     model: str | None = None
+    override_reason: str | None = None   # which rule overrode it, when one did
 
 
 def _parse(raw: str) -> tuple[str, str]:
@@ -80,7 +101,8 @@ def _is_privileged(findings) -> bool:
 
 
 def adjudicate(findings, pattern, context: list[str], client=None,
-               models=MODEL_CHAIN) -> Adjudication:
+               models=MODEL_CHAIN, register=None, allow_local: bool = True
+               ) -> Adjudication:
     """Ask the agent, then let the gate have the last word."""
     if not findings:
         return Adjudication("resolve", "resolve", "no findings", False)
@@ -135,6 +157,17 @@ def adjudicate(findings, pattern, context: list[str], client=None,
                 raise
         if used:
             break
+
+    if used is None and allow_local and local_reader.available():
+        # Last link in the chain: a small model on this machine. It has no quota and
+        # costs nothing, so free-tier exhaustion degrades the queue instead of emptying
+        # it. Same contract as the hosted models — the gate still has the last word.
+        try:
+            agent_decision, reason = _parse(local_reader.generate(prompt))
+            used = f"ollama/{local_reader.DEFAULT_MODEL}"
+        except Exception:  # noqa: BLE001
+            used = None
+
     if used is None:
         # Every model unavailable. Failing closed is the only safe default here:
         # an unreachable adjudicator must never silently resolve an exception.
@@ -142,6 +175,16 @@ def adjudicate(findings, pattern, context: list[str], client=None,
 
     # The gate has the last word. This is the guarantee: it does not depend on the
     # agent resisting a persuasive note.
-    if privileged and agent_decision == "resolve":
-        return Adjudication("escalate", agent_decision, reason, True, used)
+    if agent_decision == "resolve":
+        if privileged:
+            return Adjudication("escalate", agent_decision, reason, True, used,
+                                "privileged field")
+        # An authorisation the document claims for itself is an assertion, not
+        # evidence. If it names nothing we can check against the buyer's own records,
+        # it cannot carry the decision. See praetor/authority.py.
+        bad = authority.unverified(context, register)
+        if bad:
+            return Adjudication("escalate", agent_decision, reason, True, used,
+                                f"unverified authority: {bad[0].describe()}")
+
     return Adjudication(agent_decision, agent_decision, reason, False, used)

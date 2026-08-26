@@ -1,10 +1,18 @@
 """Build the review dashboard from real result files.
 
-This is what appears in the demo video: the queue a human actually works. It reads
-out/exceptions or out/adjudication.jsonl plus the ground truth, and renders a single
+This is what appears in the demo video: the queue a human actually works. It reads the
+adjudication results, the rules findings and the ground truth, and renders a single
 self-contained HTML file with no external dependencies.
 
-Every number on the page comes from a file in out/. Nothing is hardcoded.
+Two things on this page are not decoration:
+
+  * Every flagged value carries its provenance — TAINTED, the span it came from, the
+    hash of the document it came from. A person approving a payment can see that the
+    figure they are approving was lifted off an untrusted document, and exactly where.
+  * The approve control posts to dashboard/serve.py, which calls the real
+    praetor.gate.approve(). Approving as an agent returns the real PermissionError.
+
+Every number comes from a results file. Nothing is hardcoded.
 """
 from __future__ import annotations
 
@@ -21,12 +29,19 @@ def load_jsonl(p: Path) -> list[dict]:
     return [json.loads(l) for l in p.read_text().splitlines() if l.strip()]
 
 
+def result(name: str) -> Path:
+    """A fresh run in out/ wins; results/ is the committed measurement it falls back to."""
+    fresh = ROOT / "out" / name
+    return fresh if fresh.exists() else ROOT / "results" / name
+
+
 def main() -> None:
     truth = {r["doc_id"]: r for r in load_jsonl(ROOT / "data/constructed_truth.jsonl")}
     adj = {}
-    for r in load_jsonl(ROOT / "out/adjudication.jsonl"):
+    for r in load_jsonl(result("adjudication.jsonl")):
         adj.setdefault(r["doc_id"], r)
-    exceptions = {r["doc_id"]: r for r in load_jsonl(ROOT / "out/exc_constructed.jsonl")}
+    exceptions = {r["doc_id"]: r for r in load_jsonl(result("exc_constructed.jsonl"))}
+    approvals = {r["doc_id"]: r for r in load_jsonl(ROOT / "out/approvals.jsonl")}
 
     rows = []
     for doc_id, a in sorted(adj.items()):
@@ -38,12 +53,15 @@ def main() -> None:
             "peers": e.get("n_peer_invoices", 0),
             "codes": a.get("codes", []),
             "findings": e.get("findings", []),
+            "evidence": e.get("evidence", {}),
             "decision": a["decision"],
             "agent_decision": a["agent_decision"],
             "overridden": a["overridden"],
+            "override_reason": a.get("override_reason"),
             "reason": a.get("reason", ""),
             "correct": t.get("correct_action", "?"),
             "injected": bool(t.get("injected")),
+            "approved_by": approvals.get(doc_id, {}).get("approved_by"),
         })
 
     total = len(rows)
@@ -70,26 +88,58 @@ def render(rows, total, resolved, escalated, overrides, wrong, prec) -> str:
         card("flagged by rules", total, "every one would reach a human"),
         card("cleared by agent", len(resolved), "no human needed", "good"),
         card("sent to a human", len(escalated), "with evidence attached"),
-        card("resolve precision", f"{prec*100:.1f}%", f"{len(wrong)} wrong of {len(resolved)}",
-             "good" if not wrong else "warn"),
-        card("gate overrides", len(overrides), "agent fooled, gate held", "crit"),
+        card("resolve precision", f"{prec*100:.1f}%",
+             f"{len(wrong)} wrong of {len(resolved)}", "good" if not wrong else "warn"),
+        card("gate overrides", len(overrides), "agent voted resolve, code refused", "crit"),
     ])
 
     trs = []
     for r in rows:
-        badge = ('<span class="b crit">GATE OVERRODE</span>' if r["overridden"]
-                 else '<span class="b good">cleared</span>' if r["decision"] == "resolve"
-                 else '<span class="b">escalated</span>')
+        if r["approved_by"]:
+            badge = '<span class="b good">approved</span>'
+        elif r["overridden"]:
+            badge = '<span class="b crit">GATE OVERRODE</span>'
+        elif r["decision"] == "resolve":
+            badge = '<span class="b good">cleared</span>'
+        else:
+            badge = '<span class="b">escalated</span>'
         inj = '<span class="b warn">injected</span>' if r["injected"] else ""
+
         codes = " ".join(f'<span class="code">{c}</span>' for c in r["codes"])
         detail = "<br>".join(f'<span class="d">{f["code"]}</span> {f["detail"]}'
                              for f in r["findings"]) or "&mdash;"
+
+        # Provenance: the whole point is that this is visible before anyone approves.
+        prov = ""
+        for field, ev in (r["evidence"] or {}).items():
+            tag = ('<span class="t">TAINTED</span>' if ev.get("tainted")
+                   else '<span class="t ok">trusted</span>')
+            prov += (f'<div class="prov">{tag}<span class="pv">{ev.get("value", "")}</span>'
+                     f'<div class="ps">{field} &middot; {ev.get("span_id", "?")} '
+                     f'&middot; doc {ev.get("doc_hash", "?")}</div></div>')
+        prov = prov or '<span class="s">&mdash;</span>'
+
+        why = ""
+        if r["overridden"]:
+            why = (f'<div class="ovr">gate refused: {r["override_reason"] or "policy"}'
+                   f'<div class="s">agent voted <b>{r["agent_decision"]}</b></div></div>')
+
+        act = ""
+        if r["decision"] == "escalate":
+            if r["approved_by"]:
+                act = f'<div class="s">approved by <b>{r["approved_by"]}</b></div>'
+            else:
+                act = (f'<button class="ap" data-doc="{r["doc_id"]}">approve</button>'
+                       f'<div class="s res" id="res-{r["doc_id"]}"></div>')
+
         trs.append(f"""<tr>
 <td class="mono">{r['doc_id']}</td>
 <td>{r['vendor'][:34]}<div class="s">{r['peers']} prior invoices</div></td>
 <td>{codes}<div class="s">{detail}</div></td>
-<td>{badge} {inj}</td>
-<td class="reason">{r['reason'][:150]}</td></tr>""")
+<td>{prov}</td>
+<td>{badge} {inj}{why}</td>
+<td class="reason">{r['reason'][:150]}</td>
+<td>{act}</td></tr>""")
 
     return f"""<!doctype html><meta charset="utf-8">
 <title>PRAETOR review queue</title>
@@ -101,7 +151,11 @@ body {{ margin:0; background:var(--bg); color:var(--tx);
   font:14px/1.5 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif; }}
 header {{ padding:26px 32px 18px; border-bottom:1px solid var(--line); }}
 h1 {{ margin:0; font-size:19px; letter-spacing:-.01em; }}
-header p {{ margin:6px 0 0; color:var(--dim); font-size:13px; }}
+header p {{ margin:6px 0 0; color:var(--dim); font-size:13px; max-width:900px; }}
+.who {{ margin-top:12px; font-size:12.5px; color:var(--dim); }}
+.who input {{ background:#0b0f14; border:1px solid var(--line); color:var(--tx);
+  border-radius:6px; padding:5px 9px; font:12.5px ui-monospace,Menlo,monospace;
+  width:230px; margin-left:6px; }}
 .stats {{ display:flex; gap:14px; padding:22px 32px; flex-wrap:wrap; }}
 .card {{ background:var(--panel); border:1px solid var(--line); border-radius:10px;
   padding:16px 18px; min-width:158px; flex:1; }}
@@ -126,22 +180,72 @@ tr:last-child td {{ border-bottom:none; }}
 .code {{ font-family:ui-monospace,monospace; font-size:11px; background:#21262d;
   padding:2px 6px; border-radius:4px; color:#c9d1d9; margin-right:4px; }}
 .d {{ font-family:ui-monospace,monospace; font-size:10.5px; color:var(--dim); }}
-.reason {{ color:var(--dim); font-size:12.5px; max-width:340px; }}
+.reason {{ color:var(--dim); font-size:12.5px; max-width:300px; }}
+.prov {{ margin-bottom:7px; }}
+.t {{ display:inline-block; font-size:9.5px; font-weight:700; letter-spacing:.07em;
+  padding:1px 5px; border-radius:3px; background:rgba(248,81,73,.16); color:var(--crit);
+  vertical-align:middle; }}
+.t.ok {{ background:rgba(63,185,80,.14); color:var(--good); }}
+.pv {{ font-family:ui-monospace,Menlo,monospace; font-size:12px; margin-left:7px; }}
+.ps {{ font-family:ui-monospace,Menlo,monospace; font-size:10px; color:#6e7681; margin-top:2px; }}
+.ovr {{ margin-top:6px; font-size:11.5px; color:var(--crit); }}
+.ovr .s {{ color:var(--dim); }}
+button.ap {{ background:rgba(63,185,80,.14); color:var(--good); border:1px solid rgba(63,185,80,.4);
+  border-radius:6px; padding:5px 12px; font:12px inherit; cursor:pointer; }}
+button.ap:hover {{ background:rgba(63,185,80,.24); }}
+button.ap:disabled {{ opacity:.45; cursor:default; }}
+.res.err {{ color:var(--crit); }} .res.ok {{ color:var(--good); }}
 footer {{ padding:0 32px 40px; color:var(--dim); font-size:12px; }}
 </style>
 <header>
 <h1>PRAETOR &mdash; invoice review queue</h1>
-<p>Rules flag; the agent adjudicates; the policy gate has the last word.
-Every figure below is read from a results file, not written by hand.</p>
+<p>Rules flag; the agent adjudicates; the policy gate has the last word. Every value
+shown carries the span and document hash it came from, so approving is a
+declassification with the evidence attached &mdash; not a rubber stamp.
+Every figure is read from a results file, not written by hand.</p>
+<div class="who">approve as <input id="hid" value="aditya@kiet" spellcheck="false">
+&nbsp;<span class="s">try <code>agent:exception_resolver</code> to see the boundary refuse</span></div>
 </header>
 <div class="stats">{stats}</div>
 <table>
-<tr><th>document</th><th>supplier</th><th>why it was flagged</th>
-<th>outcome</th><th>agent's reasoning</th></tr>
+<tr><th>document</th><th>supplier</th><th>why it was flagged</th><th>provenance</th>
+<th>outcome</th><th>agent's reasoning</th><th>action</th></tr>
 {''.join(trs)}
 </table>
-<footer>Generated {datetime.now():%d %b %Y %H:%M} from out/adjudication.jsonl &middot;
-constructed corpus, synthetic purchase orders &mdash; labelled as such.</footer>
+<footer>Generated {datetime.now():%d %b %Y %H:%M} &middot;
+constructed corpus, synthetic purchase orders &mdash; labelled as such.<br>
+Approvals are live only under <code>python3 dashboard/serve.py</code>; opening this file
+directly shows the queue read-only.</footer>
+<script>
+document.querySelectorAll("button.ap").forEach(function (b) {{
+  b.addEventListener("click", function () {{
+    var doc = b.dataset.doc;
+    var out = document.getElementById("res-" + doc);
+    var hid = (document.getElementById("hid").value || "").trim();
+    b.disabled = true; out.className = "s res"; out.textContent = "approving\\u2026";
+    fetch("/approve", {{
+      method: "POST", headers: {{ "Content-Type": "application/json" }},
+      body: JSON.stringify({{ doc_id: doc, human_id: hid }})
+    }}).then(function (r) {{ return r.json().then(function (j) {{ return [r.status, j]; }}); }})
+      .then(function (p) {{
+        var status = p[0], j = p[1];
+        if (status === 200) {{
+          out.className = "s res ok";
+          out.textContent = "APPROVED by " + j.approved_by;
+        }} else {{
+          out.className = "s res err";
+          out.textContent = "REFUSED \\u2014 " + (j.error || status);
+          b.disabled = false;
+        }}
+      }})
+      .catch(function () {{
+        out.className = "s res err";
+        out.textContent = "no server \\u2014 run: python3 dashboard/serve.py";
+        b.disabled = false;
+      }});
+  }});
+}});
+</script>
 """
 
 
