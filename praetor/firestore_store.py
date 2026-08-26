@@ -40,9 +40,9 @@ from praetor.store import ROLES, AlreadyApproved, NotEscalated
 
 # One collection per entity, each document keyed by "<tenant>:<doc_id>" so a scan is
 # never needed to scope a read to one client.
-DOCS, FINDINGS, ADJ, APPROVALS, TENANTS, USERS, MEMBERS, POS = (
+DOCS, FINDINGS, ADJ, APPROVALS, TENANTS, USERS, MEMBERS, POS, SESSIONS = (
     "documents", "findings", "adjudications", "approvals",
-    "tenants", "users", "memberships", "purchase_orders")
+    "tenants", "users", "memberships", "purchase_orders", "sessions")
 
 
 def now() -> str:
@@ -239,3 +239,30 @@ def queue(db, tenant_id: str) -> list[dict]:
             "findings": findings_for(db, tenant_id, a["doc_id"]),
         })
     return sorted(out, key=lambda r: r["doc_id"])
+
+
+# ---------------------------------------------------------------- sessions
+
+def add_session(db, token_hash: str, user_id: str, created_at: str, expires_at: str) -> None:
+    db.collection(SESSIONS).document(token_hash).set({
+        "token_hash": token_hash, "user_id": user_id,
+        "created_at": created_at, "expires_at": expires_at})
+
+
+def get_session(db, token_hash: str) -> dict | None:
+    snap = db.collection(SESSIONS).document(token_hash).get()
+    return snap.to_dict() if snap.exists else None
+
+
+def delete_session(db, token_hash: str) -> None:
+    db.collection(SESSIONS).document(token_hash).delete()
+
+
+def delete_expired_sessions(db, cutoff: str) -> int:
+    n = 0
+    for snap in db.collection(SESSIONS).stream():
+        row = snap.to_dict()
+        if row.get("expires_at", "") <= cutoff:
+            delete_session(db, row["token_hash"])
+            n += 1
+    return n

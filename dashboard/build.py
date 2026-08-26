@@ -40,13 +40,24 @@ def result(name: str) -> Path:
     return fresh if fresh.exists() else ROOT / "results" / name
 
 
+def backend():
+    """Whichever store is configured. Everything below is written against one shape.
+
+    Cloud Run has an ephemeral filesystem, so a SQLite file there would vanish on every
+    cold start. PRAETOR_BACKEND=firestore is what makes a deployed instance keep state.
+    """
+    from praetor import firestore_store
+    return firestore_store if firestore_store.enabled() else store
+
+
 def rows_from_db(tenant: str) -> tuple[list[dict], list[str]]:
     """Live state. The database is what the queue actually serves from."""
     truth = {r["doc_id"]: r for r in load_jsonl(ROOT / "data/constructed_truth.jsonl")}
-    conn = store.connect()
-    known = [t["id"] for t in store.tenants(conn)]
+    db = backend()
+    conn = db.connect()
+    known = [t["id"] for t in db.tenants(conn)]
     rows = []
-    for r in store.queue(conn, tenant):
+    for r in db.queue(conn, tenant):
         t = truth.get(r["doc_id"], {})
         evidence = {f["field"]: {"value": f["value"], "span_id": f["span_id"],
                                  "doc_hash": (r["doc_hash"] or "")[:12],

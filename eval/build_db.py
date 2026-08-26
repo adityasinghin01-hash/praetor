@@ -18,7 +18,7 @@ import argparse
 import json
 from pathlib import Path
 
-from praetor import auth, store
+from praetor import auth, firestore_store, store
 from praetor.docile_adapter import load_annotation
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -47,6 +47,14 @@ def pick(name: str) -> Path:
     return fresh if fresh.exists() else ROOT / "results" / name
 
 
+from contextlib import nullcontext
+
+
+def _maybe_tx(db, conn):
+    """SQLite gets one transaction; Firestore writes are individually atomic."""
+    return db.tx(conn) if hasattr(db, "tx") else nullcontext()
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--tenant", default=store.DEFAULT_TENANT)
@@ -68,14 +76,17 @@ def main() -> None:
     for r in load_jsonl(adj_path):
         adjudications.setdefault(r["doc_id"], r)
 
-    conn = store.connect(args.db)
+    # PRAETOR_BACKEND=firestore sends the same load to Cloud Firestore instead.
+    db = firestore_store if firestore_store.enabled() else store
+    conn = db.connect() if db is firestore_store else db.connect(args.db)
     tenant = args.tenant
+    print(f"backend: {'firestore' if db is firestore_store else 'sqlite'}")
 
-    with store.tx(conn):
-        store.add_tenant(conn, tenant, args.tenant_name or tenant)
+    with _maybe_tx(db, conn):
+        db.add_tenant(conn, tenant, args.tenant_name or tenant)
         for uid, name, role in SEED_USERS:
-            store.add_user(conn, uid, name)
-            store.grant(conn, uid, tenant, role)
+            db.add_user(conn, uid, name)
+            db.grant(conn, uid, tenant, role)
             auth.set_password(conn, uid, DEMO_PASSWORD)
 
         # Purchase orders: the trusted record. Amounts land here too, which is what
@@ -86,10 +97,10 @@ def main() -> None:
             orders = data.get("purchase_orders", []) if isinstance(data, dict) else data
             for o in orders:
                 if isinstance(o, dict):
-                    store.add_purchase_order(conn, tenant, o["po_ref"],
+                    db.add_purchase_order(conn, tenant, o["po_ref"],
                                              o.get("amount"), o.get("currency"))
                 else:
-                    store.add_purchase_order(conn, tenant, o)
+                    db.add_purchase_order(conn, tenant, o)
 
         for doc_id, e in exceptions.items():
             # Hash the source document itself. Deriving it from a flagged field's
@@ -98,18 +109,26 @@ def main() -> None:
             # "unknown" that way.
             src = ROOT / f"{args.annotations}/{doc_id}.json"
             doc_hash = load_annotation(src)[1] if src.exists() else "unknown"
-            store.add_document(conn, tenant, doc_id,
+            db.add_document(conn, tenant, doc_id,
                                doc_hash=doc_hash,
                                vendor_key=e.get("vendor_key"),
                                peer_invoices=e.get("n_peer_invoices", 0),
                                source_path=f"{args.annotations}/{doc_id}.json")
-            store.add_findings(conn, tenant, doc_id,
+            db.add_findings(conn, tenant, doc_id,
                                e.get("findings", []), e.get("evidence", {}))
 
         for doc_id, a in adjudications.items():
             if doc_id not in exceptions:
                 continue
-            store.add_adjudication(conn, tenant, doc_id, a)
+            db.add_adjudication(conn, tenant, doc_id, a)
+
+    if db is firestore_store:
+        print(f"\ntenant           {tenant}")
+        print(f"  documents      {len(exceptions)}")
+        print(f"  adjudications  {len(adjudications)}")
+        print(f"  users          {len(SEED_USERS)}  (password: {DEMO_PASSWORD})")
+        print(f"\nfirestore -> project {conn.project}")
+        return
 
     n_docs = conn.execute("SELECT COUNT(*) c FROM documents WHERE tenant_id=?",
                           (tenant,)).fetchone()["c"]

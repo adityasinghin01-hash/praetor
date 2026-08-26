@@ -20,17 +20,21 @@ session, and the request body's opinion is ignored.
 
     python3 dashboard/serve.py          # then open http://127.0.0.1:8000
 
-Binds to 127.0.0.1, and the session cookie is HttpOnly and SameSite=Strict. It is not
-Secure, because there is no TLS on localhost -- that flag arrives with a deployment.
+Binds to 127.0.0.1 locally. On Cloud Run it binds 0.0.0.0 on $PORT and marks the
+session cookie Secure, because Cloud Run terminates TLS in front of the container.
+
+Nothing served here calls a model. The queue reads state and the approve path writes an
+approval; adjudication is a separate offline script. So a public deployment cannot burn
+API quota or spend money, whoever finds it.
 """
 from __future__ import annotations
 
 import html
 import json
-import subprocess
+import os
 import sys
 from http.cookies import SimpleCookie
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -92,10 +96,35 @@ are, so identity is proven here rather than asserted.</p>
 """
 
 
-def _rebuild(tenant: str, user: str, role: str) -> None:
-    subprocess.run([sys.executable, str(ROOT / "dashboard" / "build.py"),
-                    "--tenant", tenant, "--user", user, "--role", role or "none"],
-                   cwd=ROOT, check=True, capture_output=True)
+# Cloud Run gives the container a read-only filesystem in places and charges for CPU
+# time, so spawning a Python process per page load -- which is what this did -- is both
+# slow and wasteful. Render in-process instead.
+def _rebuild(tenant: str, user: str, role: str) -> str:
+    from dashboard import build as page
+
+    rows, known = (page.rows_from_db(tenant) if page.store.DB_PATH.exists()
+                   or firestore_backend() else page.rows_from_files())
+    total = len(rows)
+    resolved = [r for r in rows if r["decision"] == "resolve"]
+    escalated = [r for r in rows if r["decision"] == "escalate"]
+    overrides = [r for r in rows if r["overridden"]]
+    wrong = [r for r in resolved if r["correct"] == "escalate"]
+    right = [r for r in resolved if r["correct"] == "resolve"]
+    prec = len(right) / len(resolved) if resolved else 0.0
+    source = f"database &middot; client <b>{tenant}</b>"
+    return page.render(rows, total, resolved, escalated, overrides, wrong, prec,
+                       source, known, tenant, user, role)
+
+
+def firestore_backend() -> bool:
+    from praetor import firestore_store
+    return firestore_store.enabled()
+
+
+def db():
+    """The configured store. serve.py never names a backend directly."""
+    from praetor import firestore_store
+    return firestore_store if firestore_store.enabled() else store
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -151,7 +180,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         path = urlparse(self.path).path
-        conn = store.connect()
+        conn = db().connect()
 
         if path == "/login":
             return self._login_page()
@@ -169,21 +198,21 @@ class Handler(BaseHTTPRequestHandler):
 
         q = parse_qs(urlparse(self.path).query)
         tenant = (q.get("tenant") or [store.DEFAULT_TENANT])[0]
-        role = store.role_of(conn, user, tenant)
+        role = db().role_of(conn, user, tenant)
         if role is None:
             # Signed in, but not a member here. Show a tenant they can actually see.
-            mine = [t["id"] for t in store.tenants(conn)
-                    if store.role_of(conn, user, t["id"])]
+            mine = [t["id"] for t in db().tenants(conn)
+                    if db().role_of(conn, user, t["id"])]
             if not mine:
                 return self._json(403, {"error": f"{user} is not a member of any client"})
             return self._redirect(f"/?tenant={mine[0]}")
 
         try:
-            _rebuild(tenant, user, role)
-        except subprocess.CalledProcessError as e:
+            html_page = _rebuild(tenant, user, role)
+        except Exception as e:  # noqa: BLE001
             return self._json(500, {"error": "could not build the queue",
-                                    "detail": e.stderr.decode()[-400:]})
-        self._send(200, INDEX.read_bytes(), "text/html; charset=utf-8")
+                                    "detail": str(e)[-400:]})
+        self._send(200, html_page.encode(), "text/html; charset=utf-8")
 
     def _document(self, conn) -> None:
         """One document, as spans, for the reviewer to look at.
@@ -201,10 +230,10 @@ class Handler(BaseHTTPRequestHandler):
         tenant = (q.get("tenant") or [store.DEFAULT_TENANT])[0]
         doc_id = (q.get("doc") or [""])[0]
 
-        if store.role_of(conn, user, tenant) is None:
+        if db().role_of(conn, user, tenant) is None:
             return self._json(403, {"error": f"{user} is not a member of {tenant}"})
 
-        doc = store.document(conn, tenant, doc_id)
+        doc = db().document(conn, tenant, doc_id)
         if doc is None:
             return self._json(404, {"error": f"{doc_id} is not in this client's queue"})
 
@@ -213,7 +242,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(404, {"error": "source document is not available"})
 
         annotation, doc_hash = load_annotation(src)
-        findings = store.findings_for(conn, tenant, doc_id)
+        findings = db().findings_for(conn, tenant, doc_id)
         flagged = {f["span_id"] for f in findings if f["span_id"]}
 
         spans = []
@@ -242,7 +271,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         path = urlparse(self.path).path
-        conn = store.connect()
+        conn = db().connect()
 
         if path == "/login":
             body = self._body()
@@ -251,8 +280,13 @@ class Handler(BaseHTTPRequestHandler):
             if not user:
                 return self._login_page(401, "That email and password do not match.", email)
             token = auth.start_session(conn, user)
+            # Cloud Run terminates TLS in front of the container, so the request arrives
+            # over http with the original scheme in a header. Mark the cookie Secure only
+            # when the connection really was https, or it will not be sent back locally.
+            https = self.headers.get("X-Forwarded-Proto", "").lower() == "https"
+            secure = " Secure;" if https else ""
             return self._redirect(
-                "/", f"{COOKIE}={token}; Path=/; HttpOnly; SameSite=Strict; "
+                "/", f"{COOKIE}={token}; Path=/; HttpOnly;{secure} SameSite=Strict; "
                      f"Max-Age={auth.SESSION_HOURS * 3600}")
 
         if path != "/approve":
@@ -267,7 +301,7 @@ class Handler(BaseHTTPRequestHandler):
         doc_id = str(body.get("doc_id", ""))
         tenant = str(body.get("tenant") or store.DEFAULT_TENANT)
 
-        rows = [r for r in store.queue(conn, tenant) if r["doc_id"] == doc_id]
+        rows = [r for r in db().queue(conn, tenant) if r["doc_id"] == doc_id]
         if not rows:
             return self._json(404, {"error": f"{doc_id} is not in this client's queue"})
         row = rows[0]
@@ -286,7 +320,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(403, {"error": str(e), "refused_id": user})
 
         # 3. Authorisation. Being a person is necessary, not sufficient.
-        role = store.role_of(conn, user, tenant)
+        role = db().role_of(conn, user, tenant)
         if role != "approver":
             return self._json(403, {
                 "error": f"{user} does not hold 'approver' on {tenant}"
@@ -294,7 +328,7 @@ class Handler(BaseHTTPRequestHandler):
 
         # 4 and 5. Escalated, and not already approved. Both come from the store.
         try:
-            record = store.record_approval(
+            record = db().record_approval(
                 conn, tenant, doc_id, approved.approved_by,
                 [f.code for f in approved.findings])
         except store.NotEscalated as e:
@@ -309,9 +343,11 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
-    conn = store.connect()
-    known = [t["id"] for t in store.tenants(conn)]
+    # Cloud Run sets $PORT and expects 0.0.0.0. Locally, stay on the loopback.
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.environ.get("PORT", 8000))
+    host = os.environ.get("PRAETOR_HOST", "0.0.0.0" if os.environ.get("PORT") else "127.0.0.1")
+    conn = db().connect()
+    known = [t["id"] for t in db().tenants(conn)]
     if not known:
         sys.exit("No tenants in the database. Run:  python3 eval/build_db.py")
     purged = auth.purge_expired(conn)
@@ -320,7 +356,8 @@ def main() -> None:
     print(f"database              ->  {store.DB_PATH}")
     if purged:
         print(f"expired sessions purged: {purged}")
-    HTTPServer(("127.0.0.1", port), Handler).serve_forever()
+    print(f"listening on {host}:{port}")
+    ThreadingHTTPServer((host, port), Handler).serve_forever()
 
 
 if __name__ == "__main__":

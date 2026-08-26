@@ -26,6 +26,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import secrets
+import sqlite3
 from datetime import datetime, timedelta, timezone
 
 ITERATIONS = 240_000
@@ -68,6 +69,19 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _fs(conn):
+    """The Firestore module when `conn` is a Firestore client, else None.
+
+    Auth is one module with one interface; only the storage calls differ. Dispatching on
+    the connection type keeps the branch in one place instead of spreading two auth
+    implementations through the codebase.
+    """
+    if isinstance(conn, sqlite3.Connection):
+        return None
+    from praetor import firestore_store
+    return firestore_store
+
+
 def _token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
@@ -79,8 +93,13 @@ def authenticate(conn, email: str, password: str) -> str | None:
     the body of this function and nothing else.
     """
     email = (email or "").strip().lower()
-    row = conn.execute("SELECT id, password_hash FROM users WHERE id = ?",
-                       (email,)).fetchone()
+    fs = _fs(conn)
+    if fs is not None:
+        stored = fs.password_hash_of(conn, email)
+        row = {"id": email, "password_hash": stored} if stored is not None else None
+    else:
+        row = conn.execute("SELECT id, password_hash FROM users WHERE id = ?",
+                           (email,)).fetchone()
     if row is None:
         # Spend the time anyway, so a missing account and a wrong password take the same
         # length of time to reject.
@@ -92,12 +111,15 @@ def authenticate(conn, email: str, password: str) -> str | None:
 def start_session(conn, user_id: str) -> str:
     """Issue a session token. Only its hash is stored."""
     token = secrets.token_urlsafe(32)
-    expires = _now() + timedelta(hours=SESSION_HOURS)
-    conn.execute(
-        "INSERT INTO sessions(token_hash, user_id, created_at, expires_at)"
-        " VALUES (?,?,?,?)",
-        (_token_hash(token), user_id, _now().isoformat(timespec="seconds"),
-         expires.isoformat(timespec="seconds")))
+    created = _now().isoformat(timespec="seconds")
+    expires = (_now() + timedelta(hours=SESSION_HOURS)).isoformat(timespec="seconds")
+    fs = _fs(conn)
+    if fs is not None:
+        fs.add_session(conn, _token_hash(token), user_id, created, expires)
+    else:
+        conn.execute(
+            "INSERT INTO sessions(token_hash, user_id, created_at, expires_at)"
+            " VALUES (?,?,?,?)", (_token_hash(token), user_id, created, expires))
     return token
 
 
@@ -105,9 +127,13 @@ def session_user(conn, token: str | None) -> str | None:
     """The user this token belongs to, or None if it is unknown or expired."""
     if not token:
         return None
-    row = conn.execute(
-        "SELECT user_id, expires_at FROM sessions WHERE token_hash = ?",
-        (_token_hash(token),)).fetchone()
+    fs = _fs(conn)
+    if fs is not None:
+        row = fs.get_session(conn, _token_hash(token))
+    else:
+        row = conn.execute(
+            "SELECT user_id, expires_at FROM sessions WHERE token_hash = ?",
+            (_token_hash(token),)).fetchone()
     if row is None:
         return None
     if datetime.fromisoformat(row["expires_at"]) <= _now():
@@ -117,16 +143,28 @@ def session_user(conn, token: str | None) -> str | None:
 
 
 def end_session(conn, token: str | None) -> None:
-    if token:
+    if not token:
+        return
+    fs = _fs(conn)
+    if fs is not None:
+        fs.delete_session(conn, _token_hash(token))
+    else:
         conn.execute("DELETE FROM sessions WHERE token_hash = ?", (_token_hash(token),))
 
 
 def purge_expired(conn) -> int:
-    cur = conn.execute("DELETE FROM sessions WHERE expires_at <= ?",
-                       (_now().isoformat(timespec="seconds"),))
+    cutoff = _now().isoformat(timespec="seconds")
+    fs = _fs(conn)
+    if fs is not None:
+        return fs.delete_expired_sessions(conn, cutoff)
+    cur = conn.execute("DELETE FROM sessions WHERE expires_at <= ?", (cutoff,))
     return cur.rowcount or 0
 
 
 def set_password(conn, user_id: str, password: str) -> None:
-    conn.execute("UPDATE users SET password_hash = ? WHERE id = ?",
-                 (hash_password(password), user_id.strip().lower()))
+    fs = _fs(conn)
+    if fs is not None:
+        fs.set_password_hash(conn, user_id, hash_password(password))
+    else:
+        conn.execute("UPDATE users SET password_hash = ? WHERE id = ?",
+                     (hash_password(password), user_id.strip().lower()))
