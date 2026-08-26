@@ -106,6 +106,8 @@ def rows_from_files() -> tuple[list[dict], list[str]]:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--tenant", default=store.DEFAULT_TENANT)
+    ap.add_argument("--user", default="")
+    ap.add_argument("--role", default="")
     args = ap.parse_args()
 
     if store.DB_PATH.exists():
@@ -125,14 +127,14 @@ def main() -> None:
 
     out = ROOT / "dashboard" / "index.html"
     out.write_text(render(rows, total, resolved, escalated, overrides, wrong, prec,
-                          source, known, args.tenant))
+                          source, known, args.tenant, args.user, args.role))
     print(f"wrote {out}")
     print(f"  {total} exceptions | {len(resolved)} resolved | {len(escalated)} escalated "
           f"| {len(overrides)} gate override(s) | precision {prec:.3f}")
 
 
 def render(rows, total, resolved, escalated, overrides, wrong, prec,
-           source="", known=(), tenant="") -> str:
+           source="", known=(), tenant="", user="", role="") -> str:
     def card(label, value, sub="", tone=""):
         return (f'<div class="card {tone}"><div class="v">{value}</div>'
                 f'<div class="l">{label}</div><div class="s">{sub}</div></div>')
@@ -181,9 +183,11 @@ def render(rows, total, resolved, escalated, overrides, wrong, prec,
         if r["decision"] == "escalate":
             if r["approved_by"]:
                 act = f'<div class="s">approved by <b>{r["approved_by"]}</b></div>'
-            else:
+            elif role == "approver":
                 act = (f'<button class="ap" data-doc="{r["doc_id"]}">approve</button>'
                        f'<div class="s res" id="res-{r["doc_id"]}"></div>')
+            else:
+                act = '<div class="s">view only</div>' 
 
         trs.append(f"""<tr>
 <td class="mono">{r['doc_id']}</td>
@@ -204,6 +208,8 @@ def render(rows, total, resolved, escalated, overrides, wrong, prec,
     else:
         tenant_picker = ""
     tenant_json = json.dumps(tenant)
+    user_html = user or "not signed in"
+    role_html = role or "no role"
 
     return f"""<!doctype html><meta charset="utf-8">
 <title>PRAETOR review queue</title>
@@ -217,10 +223,13 @@ header {{ padding:26px 32px 18px; border-bottom:1px solid var(--line); }}
 h1 {{ margin:0; font-size:19px; letter-spacing:-.01em; }}
 header p {{ margin:6px 0 0; color:var(--dim); font-size:13px; max-width:900px; }}
 .who {{ margin-top:12px; font-size:12.5px; color:var(--dim); }}
-.who input, .who select {{ background:#0b0f14; border:1px solid var(--line); color:var(--tx);
+.who select {{ background:#0b0f14; border:1px solid var(--line); color:var(--tx);
   border-radius:6px; padding:5px 9px; font:12.5px ui-monospace,Menlo,monospace;
   margin-left:6px; }}
-.who input {{ width:230px; }}
+.who .me {{ font-family:ui-monospace,Menlo,monospace; color:var(--tx); }}
+.who .role {{ margin-left:7px; padding:2px 8px; border-radius:20px; font-size:11px;
+  background:rgba(88,166,255,.14); color:var(--acc); }}
+.who .out {{ color:var(--dim); }}
 .stats {{ display:flex; gap:14px; padding:22px 32px; flex-wrap:wrap; }}
 .card {{ background:var(--panel); border:1px solid var(--line); border-radius:10px;
   padding:16px 18px; min-width:158px; flex:1; }}
@@ -268,10 +277,10 @@ footer {{ padding:0 32px 40px; color:var(--dim); font-size:12px; }}
 shown carries the span and document hash it came from, so approving is a
 declassification with the evidence attached &mdash; not a rubber stamp.
 Every figure is read from a results file, not written by hand.</p>
-<div class="who">approve as <input id="hid" value="aditya@kiet" spellcheck="false">
-{tenant_picker}
-&nbsp;<span class="s">try <code>agent:exception_resolver</code>, or
-<code>auditor@acme-industries.test</code>, to see the boundary refuse</span></div>
+<div class="who">signed in as <b class="me">{user_html}</b>
+<span class="role">{role_html}</span>{tenant_picker}
+&nbsp;<a class="out" href="/logout">sign out</a>
+&nbsp;<span class="s">identity comes from the session, not from this page</span></div>
 </header>
 <div class="stats">{stats}</div>
 <table>
@@ -289,11 +298,10 @@ document.querySelectorAll("button.ap").forEach(function (b) {{
   b.addEventListener("click", function () {{
     var doc = b.dataset.doc;
     var out = document.getElementById("res-" + doc);
-    var hid = (document.getElementById("hid").value || "").trim();
     b.disabled = true; out.className = "s res"; out.textContent = "approving\\u2026";
     fetch("/approve", {{
       method: "POST", headers: {{ "Content-Type": "application/json" }},
-      body: JSON.stringify({{ doc_id: doc, human_id: hid, tenant: TENANT }})
+      body: JSON.stringify({{ doc_id: doc, tenant: TENANT }})
     }}).then(function (r) {{ return r.json().then(function (j) {{ return [r.status, j]; }}); }})
       .then(function (p) {{
         var status = p[0], j = p[1];
@@ -308,7 +316,7 @@ document.querySelectorAll("button.ap").forEach(function (b) {{
       }})
       .catch(function () {{
         out.className = "s res err";
-        out.textContent = "no server \\u2014 run: python3 dashboard/serve.py";
+        out.textContent = "no server \\u2014 run: make serve";
         b.disabled = false;
       }});
   }});

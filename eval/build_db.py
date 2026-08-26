@@ -18,12 +18,15 @@ import argparse
 import json
 from pathlib import Path
 
-from praetor import store
+from praetor import auth, store
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# Seed accounts, so a fresh clone has someone who can approve. Deliberately obvious
-# placeholders -- real identities arrive with authentication.
+# Seed accounts, so a fresh clone has someone who can log in and approve. The password
+# is printed on the sign-in page on purpose: a judge cloning this repo has no other way
+# in, and pretending these are secrets would help nobody. Real deployments replace this
+# seeding step with an identity provider.
+DEMO_PASSWORD = "praetor"
 SEED_USERS = [
     ("aditya@kiet", "Aditya", "approver"),
     ("reviewer@acme-industries.test", "AP Reviewer", "approver"),
@@ -70,6 +73,7 @@ def main() -> None:
         for uid, name, role in SEED_USERS:
             store.add_user(conn, uid, name)
             store.grant(conn, uid, tenant, role)
+            auth.set_password(conn, uid, DEMO_PASSWORD)
 
         # Purchase orders: the trusted record. Amounts land here too, which is what
         # finally lets the gate's reconciliation check do anything.
@@ -112,7 +116,7 @@ def main() -> None:
     print(f"  adjudications  {n_adj}")
     print(f"  purchase orders{n_po:>4}")
     print(f"  approvals kept {n_appr}")
-    print(f"  users          {len(SEED_USERS)}")
+    print(f"  users          {len(SEED_USERS)}  (password: {DEMO_PASSWORD})")
     print(f"\ndatabase -> {args.db or store.DB_PATH}")
 
 

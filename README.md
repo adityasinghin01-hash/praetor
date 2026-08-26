@@ -80,10 +80,16 @@ For the queue with working approvals:
 make serve            # http://127.0.0.1:8000
 ```
 
+Sign in with a seeded account — the sign-in page shows them, password `praetor`.
+`reviewer@acme-industries.test` is an approver; `auditor@acme-industries.test` is a
+viewer and gets no approve button at all.
+
 Every flagged value shows its provenance — `TAINTED`, the span it came from, the hash of
-the document it came from — and the approve button posts to `praetor.gate.approve()`.
-Type `agent:exception_resolver` into the "approve as" box to watch the real
-`PermissionError` come back to the browser. Approvals append to `out/approvals.jsonl`.
+the document it came from — and the approve button calls the real
+`praetor.gate.approve()`. **The identity comes from the session, not from the page**, so
+the browser cannot name who is approving: posting a different `human_id` in the request
+body is ignored and the approval records the signed-in user. Approvals land in SQLite,
+keyed so the same document cannot be approved twice.
 
 To prove the corpus itself is reproducible rather than committed-and-trusted:
 
@@ -228,6 +234,11 @@ be hijacked by the document it is reading.*
 
 ## Known limits
 
+- **Authentication is local, and it is a stand-in.** A password proves the identity and
+  a session carries it, which is enough to make the approval record mean something. It is
+  not an identity provider: there is no TLS on localhost, no account recovery, and the
+  seeded demo password is printed on the sign-in page on purpose. Google Sign-In replaces
+  the body of one function, `auth.authenticate()`, and nothing downstream changes.
 - **The defence is scoped, not total.** The kernel protects privileged sinks, and
   `praetor/authority.py` now also refuses approvals a document claims for itself. What
   neither stops is a document being persuasive while naming no checkable reference at

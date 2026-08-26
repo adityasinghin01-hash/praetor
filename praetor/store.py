@@ -48,10 +48,21 @@ CREATE TABLE IF NOT EXISTS tenants (
 );
 
 CREATE TABLE IF NOT EXISTS users (
-    id          TEXT PRIMARY KEY,          -- canonical email
-    name        TEXT,
-    created_at  TEXT NOT NULL
+    id            TEXT PRIMARY KEY,        -- canonical email
+    name          TEXT,
+    password_hash TEXT,
+    created_at    TEXT NOT NULL
 );
+
+-- Only the hash of a session token is stored, so a copy of this database does not
+-- hand over live sessions.
+CREATE TABLE IF NOT EXISTS sessions (
+    token_hash  TEXT PRIMARY KEY,
+    user_id     TEXT NOT NULL REFERENCES users(id),
+    created_at  TEXT NOT NULL,
+    expires_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id);
 
 CREATE TABLE IF NOT EXISTS memberships (
     user_id     TEXT NOT NULL REFERENCES users(id),
@@ -131,6 +142,7 @@ def now() -> str:
 # and the database stays upgradable instead of needing to be thrown away.
 MIGRATIONS = [
     ("documents", "peer_invoices", "ALTER TABLE documents ADD COLUMN peer_invoices INTEGER DEFAULT 0"),
+    ("users", "password_hash", "ALTER TABLE users ADD COLUMN password_hash TEXT"),
 ]
 
 
