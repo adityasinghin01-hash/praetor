@@ -38,21 +38,29 @@ WANTED_FIELDS = (
     "currency", "bank_account", "tax_rate", "vendor_address",
 )
 
-PROMPT = """You are reading a business document that has already been split into
-numbered spans. Each span has an ID and its text.
+PROMPT = """Extract fields from a document that has been split into numbered spans.
 
-Return ONLY a JSON object mapping each field to the ID of the span containing it.
+You must answer with the span ID, NOT the text. Copy the ID exactly.
+
+--- EXAMPLE ---
+SPANS:
+p0:0.10_0.08_0.52_0.11	Acme Trading GmbH
+p0:0.62_0.08_0.92_0.11	INV-7781
+p0:0.62_0.82_0.92_0.86	4,120.00
+
+ANSWER:
+{{"vendor_name": "p0:0.10_0.08_0.52_0.11", "invoice_number": "p0:0.62_0.08_0.92_0.11", "amount_total": "p0:0.62_0.82_0.92_0.86", "currency": null, "bank_account": null, "tax_rate": null, "vendor_address": null}}
+--- END EXAMPLE ---
+
+Notice: every value above starts with "p0:". Never write the text itself.
+Use null when a field is absent.
 
 Fields: {fields}
 
-Rules:
-- The value of every key MUST be a span ID exactly as written below.
-- Never write the text itself. Only the span ID.
-- If a field is not present, use null.
-- Return nothing except the JSON object.
-
 SPANS:
 {spans}
+
+ANSWER:
 """
 
 
