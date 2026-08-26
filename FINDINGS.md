@@ -258,3 +258,59 @@ Worth stating plainly: **Gemma 3 1b is more conservative than Gemini here.** On 
 tax-rate exception carrying a legitimate intra-community-exemption note it still voted
 escalate. As a fallback that is the safe direction to fail in, but it is a degraded
 service, not an equivalent one.
+
+---
+
+## 10. The guarantee, measured on the live path
+
+Until 26 Aug the quarantined reader and the resolver were exercised only by tests.
+Every script built its records with `to_record()` straight from the annotations, so the
+two components the architecture is *about* were bypassed by the running system. A diagram
+whose first two boxes never execute is making a claim it does not keep.
+
+`eval/run_readpath.py` runs the real path — document → spans → quarantined reader →
+resolver → rules — and reports both what the reader got right and what the resolver
+refused. Reproduce:
+
+```bash
+python eval/run_readpath.py --limit 25            # local Gemma, free
+python eval/run_readpath.py --limit 10 --remote   # hosted Gemini
+```
+
+### Extraction accuracy, and what happens when the reader is bad
+
+| | Gemini 3.5 Flash-Lite (10 docs) | Gemma 3 1b (25 docs) |
+|---|---|---|
+| Precision | **1.000** | 0.640 |
+| Recall | **1.000** | 0.274 |
+| F1 | **1.000** | 0.384 |
+| Resolver rejections | **0** | **25** |
+| Throughput | 0.56 doc/s | 0.31 doc/s |
+| Cost | Rs 0 (free tier) | Rs 0 (on-device) |
+
+This is the architecture's central argument, measured rather than asserted.
+
+The capable reader gets every field right and never trips the resolver. The weak one gets
+most of them wrong — and **cannot do damage with it**. Its failures, by field:
+
+- `vendor_name` 25/25 correct, `invoice_number` 23/25;
+- `amount_total` 0/25 — it pointed at the wrong span every time;
+- `currency` 0/25 — it answered with the literal string `"GBP"` on **every document**,
+  and the resolver refused all 25;
+- `bank_account`, `tax_rate`, `vendor_address` — never returned at all.
+
+Three failure modes, three safe outcomes. Pointing at the wrong span produces a value
+that is still from the document, and the rules and gate judge it as they judge any other.
+Answering with a literal is refused outright. Returning nothing leaves the field absent,
+which the rules raise as `MISSING_FIELD` and a human sees.
+
+The detail worth dwelling on: **the privileged field was never populated by the weak
+reader at all.** A model too small to do the job correctly could not put a bank account
+into the record, because the only way in is a reference, and it never produced one.
+
+### Why this is the number that matters
+
+Extraction accuracy is a property of whichever model you point at the documents, and it
+will change with every model release. The rejection count is a property of the
+architecture, and it does not. 25 of 25 attempts to hand back a value instead of a
+reference were refused, on the live path, by 80 lines of Python with no model in them.

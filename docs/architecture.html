@@ -191,7 +191,8 @@ footer b{color:var(--dim)}
       </div>
     </div>
     <div class="znote">Measured: <b style="color:#f85149">12 of 20</b> public injection techniques persuaded an ordinary
-      extraction prompt here to hand back an attacker&rsquo;s bank account. The design starts from the assumption that this happened.</div>
+      extraction prompt here to hand back an attacker&rsquo;s bank account. The design starts from the assumption that this happened &mdash; and on the live path a weak reader
+      tried to answer with a literal value on <b style="color:#f85149">25 of 25</b> documents.</div>
   </div>
 
   <div class="bound">
@@ -224,7 +225,8 @@ footer b{color:var(--dim)}
           <span class="mono" style="color:#f85149">TAINTED</span>.</div>
       </div>
     </div>
-    <div class="znote">A compromised reader can point at the <i>wrong</i> span. It cannot introduce one.</div>
+    <div class="znote">A compromised reader can point at the <i>wrong</i> span. It cannot introduce one.
+      All 25 literal answers were refused, by 80 lines with no model in them.</div>
   </div>
 </div>
 
@@ -366,7 +368,7 @@ footer b{color:var(--dim)}
   </div>
   <div class="tile acc">
     <div class="v">0.874</div><div class="l">rules baseline F1</div>
-    <div class="s">Recall 0.963, and the right reason on 100% of catches. Detection is near&#8209;solved by 118 lines of Python &mdash; so the agent adjudicates instead of detecting.</div>
+    <div class="s">Recall 0.963, right reason on 100% of catches. Extraction on the live path is F1 <b style="color:#e6edf3">1.000</b> with Gemini and <b style="color:#e6edf3">0.384</b> with a 1b Gemma &mdash; neither could introduce a value.</div>
   </div>
   <div class="tile good">
     <div class="v">28%</div><div class="l">fewer human touches</div>
@@ -379,7 +381,8 @@ footer b{color:var(--dim)}
 </div>
 
 <footer>
-  <div><b>Prior art, stated up front:</b> CaMeL (arXiv 2503.18813) &middot; RTBAS (arXiv 2502.08966) &middot; Fides &middot; APPA &middot; TraceAegis.
+  <div><b>Design decisions, with what each one costs:</b> <span class="mono" style="color:#58a6ff">docs/DECISIONS.md</span><br>
+    <b>Prior art, stated up front:</b> CaMeL (arXiv 2503.18813) &middot; RTBAS (arXiv 2502.08966) &middot; Fides &middot; APPA &middot; TraceAegis.
     AP automation is occupied by Ramp, Vic.ai, AppZen; vendor verification by Trustpair, nsKnox, apexanalytix. This is an engineering demonstration, not a market claim.</div>
   <div><b>github.com/adityasinghin01-hash/praetor</b></div>
 </footer>

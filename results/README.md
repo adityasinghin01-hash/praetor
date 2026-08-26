@@ -8,6 +8,8 @@ an API key.
 |---|---|---|
 | `attacks_undefended.jsonl` | `make attacks` | FINDINGS §1–3 · the 60% undefended rate |
 | `adjudication.jsonl` | `make adjudicate` | FINDINGS §6 · 28% fewer human touches, precision 1.000 |
+| `readpath.jsonl` | `make readpath` | FINDINGS §10 · local Gemma, 25 of 25 literal answers refused |
+| `readpath_gemini.jsonl` | `make readpath` + `--remote` | FINDINGS §10 · hosted Gemini, F1 1.000, no rejections |
 
 Re-running either command writes to `out/`, which is gitignored and **takes precedence**
 over this directory. So a fresh measurement always wins over the published one, and

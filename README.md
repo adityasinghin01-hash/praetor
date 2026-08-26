@@ -74,6 +74,17 @@ make demo             # tests + rules baseline + review dashboard
 `make demo` takes about ten seconds, makes **no network calls and costs nothing**, and
 ends by writing `dashboard/index.html` — the queue a human actually works. Open it.
 
+To run the real path end to end — the quarantined reader, the resolver, then the rules:
+
+```bash
+make readpath               # local Gemma, free; N=10 for a shorter run
+```
+
+This is the path the architecture is about, and it reports both what the reader got right
+and what the resolver refused. On a 1b local model, F1 0.384 and **25 of 25 documents had
+a literal value rejected**; on Gemini, F1 1.000 and no rejections. Neither reader could
+introduce a value. See [FINDINGS §10](FINDINGS.md).
+
 To watch provenance move through the system:
 
 ```bash
@@ -230,6 +241,12 @@ unversioned alias whose version cannot be stated on a submission form.
 
 **Not yet deployed.** Cloud Run, Firestore, Pub/Sub and Cloud Trace are the deployment
 target, and the diagram labels them as such. Everything above runs locally today.
+
+## Why it is shaped this way
+
+[docs/DECISIONS.md](docs/DECISIONS.md) records each architectural decision with what was
+rejected, why, and **what it costs** — including the two we reversed after measuring
+something that contradicted them.
 
 ## Prior art — an engineering demonstration, not a market claim
 
