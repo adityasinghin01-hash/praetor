@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS documents (
     doc_hash     TEXT NOT NULL,
     vendor_key   TEXT,
     peer_invoices INTEGER DEFAULT 0,
+    source_path  TEXT,
     ingested_at  TEXT NOT NULL,
     PRIMARY KEY (tenant_id, doc_id)
 );
@@ -143,6 +144,7 @@ def now() -> str:
 MIGRATIONS = [
     ("documents", "peer_invoices", "ALTER TABLE documents ADD COLUMN peer_invoices INTEGER DEFAULT 0"),
     ("users", "password_hash", "ALTER TABLE users ADD COLUMN password_hash TEXT"),
+    ("documents", "source_path", "ALTER TABLE documents ADD COLUMN source_path TEXT"),
 ]
 
 
@@ -197,12 +199,13 @@ def grant(conn, user_id: str, tenant_id: str, role: str) -> None:
 
 
 def add_document(conn, tenant_id, doc_id, doc_hash, vendor_key=None,
-                 peer_invoices=0) -> None:
+                 peer_invoices=0, source_path=None) -> None:
     conn.execute(
         "INSERT OR REPLACE INTO documents"
-        "(tenant_id, doc_id, doc_hash, vendor_key, peer_invoices, ingested_at)"
-        " VALUES (?,?,?,?,?,?)",
-        (tenant_id, doc_id, doc_hash, vendor_key, int(peer_invoices or 0), now()))
+        "(tenant_id, doc_id, doc_hash, vendor_key, peer_invoices, source_path, ingested_at)"
+        " VALUES (?,?,?,?,?,?,?)",
+        (tenant_id, doc_id, doc_hash, vendor_key, int(peer_invoices or 0),
+         str(source_path) if source_path else None, now()))
 
 
 def add_findings(conn, tenant_id, doc_id, findings, evidence=None) -> None:
@@ -278,6 +281,20 @@ def record_approval(conn, tenant_id, doc_id, approved_by, codes) -> dict:
 
 
 # ---------------------------------------------------------------- reads
+
+def document(conn, tenant_id: str, doc_id: str) -> dict | None:
+    """One document, scoped. Returns None for another tenant's doc, not that tenant's row."""
+    row = conn.execute(
+        "SELECT * FROM documents WHERE tenant_id=? AND doc_id=?",
+        (tenant_id, doc_id)).fetchone()
+    return dict(row) if row else None
+
+
+def findings_for(conn, tenant_id: str, doc_id: str) -> list[dict]:
+    return [dict(r) for r in conn.execute(
+        "SELECT code, field, detail, value, span_id, tainted"
+        "  FROM findings WHERE tenant_id=? AND doc_id=?", (tenant_id, doc_id))]
+
 
 def role_of(conn, user_id: str, tenant_id: str) -> str | None:
     row = conn.execute(

@@ -19,6 +19,7 @@ import json
 from pathlib import Path
 
 from praetor import auth, store
+from praetor.docile_adapter import load_annotation
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -53,6 +54,8 @@ def main() -> None:
     ap.add_argument("--exceptions", default=None,
                     help="defaults to out/ then results/ exc_constructed.jsonl")
     ap.add_argument("--adjudication", default=None)
+    ap.add_argument("--annotations", default="data/constructed",
+                    help="where the source documents live, recorded per document")
     ap.add_argument("--po-register", default="data/po_register.json")
     ap.add_argument("--db", default=None)
     args = ap.parse_args()
@@ -89,11 +92,17 @@ def main() -> None:
                     store.add_purchase_order(conn, tenant, o)
 
         for doc_id, e in exceptions.items():
+            # Hash the source document itself. Deriving it from a flagged field's
+            # evidence only works when something with a value was flagged -- a missing
+            # field has no value to carry it, and eight documents came through as
+            # "unknown" that way.
+            src = ROOT / f"{args.annotations}/{doc_id}.json"
+            doc_hash = load_annotation(src)[1] if src.exists() else "unknown"
             store.add_document(conn, tenant, doc_id,
-                               doc_hash=(e.get("evidence", {}).get("bank_account", {})
-                                         .get("doc_hash") or "unknown"),
+                               doc_hash=doc_hash,
                                vendor_key=e.get("vendor_key"),
-                               peer_invoices=e.get("n_peer_invoices", 0))
+                               peer_invoices=e.get("n_peer_invoices", 0),
+                               source_path=f"{args.annotations}/{doc_id}.json")
             store.add_findings(conn, tenant, doc_id,
                                e.get("findings", []), e.get("evidence", {}))
 

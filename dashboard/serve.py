@@ -38,6 +38,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from praetor import auth, store  # noqa: E402
+from praetor.docile_adapter import load_annotation  # noqa: E402
 from praetor.gate import Action, GateDecision, approve  # noqa: E402
 from praetor.types import Finding  # noqa: E402
 
@@ -157,6 +158,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/logout":
             auth.end_session(conn, self._token())
             return self._redirect("/login", f"{COOKIE}=; Path=/; Max-Age=0")
+        if path == "/document":
+            return self._document(conn)
         if path not in ("/", "/index.html"):
             return self._json(404, {"error": "not found"})
 
@@ -181,6 +184,59 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(500, {"error": "could not build the queue",
                                     "detail": e.stderr.decode()[-400:]})
         self._send(200, INDEX.read_bytes(), "text/html; charset=utf-8")
+
+    def _document(self, conn) -> None:
+        """One document, as spans, for the reviewer to look at.
+
+        Scoped twice: the caller must hold a session, and the document must belong to a
+        client they are a member of. The file path comes from our own database rather
+        than from the query string, and is resolved under the repo root before it is
+        opened -- a path from a request is not a path we follow.
+        """
+        user = auth.session_user(conn, self._token())
+        if not user:
+            return self._json(401, {"error": "not signed in"})
+
+        q = parse_qs(urlparse(self.path).query)
+        tenant = (q.get("tenant") or [store.DEFAULT_TENANT])[0]
+        doc_id = (q.get("doc") or [""])[0]
+
+        if store.role_of(conn, user, tenant) is None:
+            return self._json(403, {"error": f"{user} is not a member of {tenant}"})
+
+        doc = store.document(conn, tenant, doc_id)
+        if doc is None:
+            return self._json(404, {"error": f"{doc_id} is not in this client's queue"})
+
+        src = (ROOT / (doc["source_path"] or "")).resolve()
+        if not src.is_file() or ROOT not in src.parents:
+            return self._json(404, {"error": "source document is not available"})
+
+        annotation, doc_hash = load_annotation(src)
+        findings = store.findings_for(conn, tenant, doc_id)
+        flagged = {f["span_id"] for f in findings if f["span_id"]}
+
+        spans = []
+        for fld in annotation.get("field_extractions", []):
+            page = int(fld.get("page", 0))
+            bbox = [float(c) for c in fld.get("bbox", [0, 0, 0, 0])]
+            sid = f"p{page}:" + "_".join(f"{c:.4f}" for c in bbox)
+            spans.append({
+                "span_id": sid, "page": page, "bbox": bbox,
+                "text": str(fld.get("text", "")).strip(),
+                "fieldtype": fld.get("fieldtype"),
+                "flagged": sid in flagged,
+            })
+
+        return self._json(200, {
+            "doc_id": doc_id,
+            "doc_hash": doc_hash,
+            "stored_hash": doc["doc_hash"],
+            "intact": doc_hash == doc["doc_hash"],
+            "vendor": doc["vendor_key"],
+            "findings": findings,
+            "spans": spans,
+        })
 
     # ----------------------------------------------------------------- POST
 

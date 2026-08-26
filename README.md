@@ -80,6 +80,10 @@ For the queue with working approvals:
 make serve            # http://127.0.0.1:8000
 ```
 
+Click any document id to open it: the invoice is drawn from its own spans, at their own
+coordinates, with the flagged one highlighted and the document hash checked against what
+was stored at ingest. What you see is what the reader was shown, and nothing else.
+
 Sign in with a seeded account — the sign-in page shows them, password `praetor`.
 `reviewer@acme-industries.test` is an approver; `auditor@acme-industries.test` is a
 viewer and gets no approve button at all.

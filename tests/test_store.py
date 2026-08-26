@@ -144,3 +144,29 @@ def test_findings_carry_provenance(conn):
     assert f["value"] == "IN99-XXXX"
     assert f["span_id"] == "p0:0.1"
     assert f["tainted"] == 1
+
+
+# ---------------------------------------------------------------- document lookup
+
+def test_a_document_is_only_visible_inside_its_tenant(conn):
+    """What the viewer endpoint relies on: another client's document simply is not there."""
+    _escalated(conn, TENANT, "A1")
+    assert store.document(conn, TENANT, "A1")["doc_id"] == "A1"
+    assert store.document(conn, OTHER, "A1") is None
+
+
+def test_findings_are_only_visible_inside_their_tenant(conn):
+    _escalated(conn, TENANT, "A1")
+    assert len(store.findings_for(conn, TENANT, "A1")) == 1
+    assert store.findings_for(conn, OTHER, "A1") == []
+
+
+def test_a_document_records_where_it_came_from(conn):
+    with store.tx(conn):
+        store.add_document(conn, TENANT, "D9", "hash9",
+                           source_path="data/constructed/D9.json")
+    assert store.document(conn, TENANT, "D9")["source_path"] == "data/constructed/D9.json"
+
+
+def test_an_unknown_document_is_none_not_an_error(conn):
+    assert store.document(conn, TENANT, "does-not-exist") is None

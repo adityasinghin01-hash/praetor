@@ -190,7 +190,7 @@ def render(rows, total, resolved, escalated, overrides, wrong, prec,
                 act = '<div class="s">view only</div>' 
 
         trs.append(f"""<tr>
-<td class="mono">{r['doc_id']}</td>
+<td><button class="doc" data-doc="{r['doc_id']}">{r['doc_id']}</button></td>
 <td>{r['vendor'][:34]}<div class="s">{r['peers']} prior invoices</div></td>
 <td>{codes}<div class="s">{detail}</div></td>
 <td>{prov}</td>
@@ -270,6 +270,51 @@ button.ap:hover {{ background:rgba(63,185,80,.24); }}
 button.ap:disabled {{ opacity:.45; cursor:default; }}
 .res.err {{ color:var(--crit); }} .res.ok {{ color:var(--good); }}
 footer {{ padding:0 32px 40px; color:var(--dim); font-size:12px; }}
+
+button.doc {{ background:none; border:none; padding:0; cursor:pointer; color:var(--acc);
+  font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace; text-decoration:underline;
+  text-decoration-color:rgba(88,166,255,.35); text-underline-offset:3px; }}
+button.doc:hover {{ text-decoration-color:var(--acc); }}
+
+/* the document viewer */
+#ov {{ position:fixed; inset:0; background:rgba(4,6,9,.82); display:none;
+  place-items:center; padding:36px; z-index:50; }}
+#ov.on {{ display:grid; }}
+.sheet {{ background:var(--panel); border:1px solid var(--line); border-radius:12px;
+  width:min(1180px,100%); height:min(860px,100%); display:grid;
+  grid-template-columns:1fr 340px; overflow:hidden; }}
+.sheet .page-wrap {{ padding:22px; background:#0b0f14; display:grid; place-items:center;
+  min-height:0; }}
+/* A4 proportions, sized to the height available. Sizing to width instead pushes the
+   bottom of the page out of the panel, which hides exactly the spans a reviewer most
+   needs to see -- the payment details and the note at the foot of the invoice. */
+.page {{ position:relative; height:100%; aspect-ratio:1/1.414; width:auto;
+  max-width:100%; background:#f7f7f4; border-radius:3px;
+  box-shadow:0 10px 40px rgba(0,0,0,.5); }}
+.sp {{ position:absolute; font:11px/1.25 ui-monospace,Menlo,monospace; color:#1a1d21;
+  display:flex; align-items:center; padding:0 3px; overflow:hidden;
+  border:1px solid rgba(20,24,30,.16); border-radius:2px; background:rgba(255,255,255,.4); }}
+.sp.flag {{ background:rgba(248,81,73,.2); border-color:rgba(200,30,25,.75);
+  box-shadow:0 0 0 2px rgba(248,81,73,.28); color:#7a1410; font-weight:600; }}
+.sp.note {{ font-size:9.5px; line-height:1.2; align-items:flex-start; padding-top:2px; }}
+.side {{ border-left:1px solid var(--line); padding:24px; overflow:auto; }}
+.side h2 {{ margin:0 0 3px; font-size:15px; }}
+.side .hash {{ font:10.5px ui-monospace,Menlo,monospace; color:var(--dim);
+  word-break:break-all; margin-bottom:14px; }}
+.side h3 {{ margin:18px 0 8px; font-size:10.5px; letter-spacing:.07em;
+  text-transform:uppercase; color:var(--dim); font-weight:600; }}
+.fi {{ border-left:2px solid var(--crit); padding:2px 0 2px 10px; margin-bottom:12px; }}
+.fi .c {{ font:11px ui-monospace,Menlo,monospace; color:var(--crit); }}
+.fi .d {{ font-size:12px; color:var(--dim); margin-top:2px; }}
+.fi .v {{ font:12px ui-monospace,Menlo,monospace; margin-top:5px; }}
+.fi .sid {{ font:10px ui-monospace,Menlo,monospace; color:#6e7681; margin-top:2px; }}
+.intact {{ display:inline-block; font-size:10px; font-weight:700; letter-spacing:.06em;
+  text-transform:uppercase; padding:2px 7px; border-radius:4px; margin-bottom:12px; }}
+.intact.y {{ background:rgba(63,185,80,.15); color:var(--good); }}
+.intact.n {{ background:rgba(248,81,73,.16); color:var(--crit); }}
+#ovx {{ position:absolute; top:20px; right:26px; background:none; border:none;
+  color:var(--dim); font-size:26px; line-height:1; cursor:pointer; }}
+#ovx:hover {{ color:var(--tx); }}
 </style>
 <header>
 <h1>PRAETOR &mdash; invoice review queue</h1>
@@ -292,8 +337,86 @@ Every figure is read from a results file, not written by hand.</p>
 constructed corpus, synthetic purchase orders &mdash; labelled as such.<br>
 Approvals are live only under <code>python3 dashboard/serve.py</code>; opening this file
 directly shows the queue read-only.</footer>
+<div id="ov"><button id="ovx" aria-label="close">&times;</button>
+<div class="sheet"><div class="page-wrap"><div class="page" id="page"></div></div>
+<div class="side" id="side"></div></div></div>
 <script>
 var TENANT = {tenant_json};
+
+// The document viewer. Spans are drawn at their own bbox, so a reviewer sees where on
+// the page a flagged value physically sits -- the same coordinates the span id encodes.
+var ov = document.getElementById("ov");
+var pageEl = document.getElementById("page");
+var sideEl = document.getElementById("side");
+
+function esc(t) {{
+  var d = document.createElement("div"); d.textContent = t == null ? "" : t;
+  return d.innerHTML;
+}}
+
+function closeOv() {{ ov.classList.remove("on"); }}
+document.getElementById("ovx").addEventListener("click", closeOv);
+ov.addEventListener("click", function (e) {{ if (e.target === ov) closeOv(); }});
+document.addEventListener("keydown", function (e) {{
+  if (e.key === "Escape") closeOv();
+}});
+
+function openDoc(docId) {{
+  pageEl.innerHTML = "";
+  sideEl.innerHTML = '<h2>' + esc(docId) + '</h2><div class="hash">loading\u2026</div>';
+  ov.classList.add("on");
+
+  fetch("/document?doc=" + encodeURIComponent(docId) + "&tenant=" + encodeURIComponent(TENANT))
+    .then(function (r) {{ return r.json().then(function (j) {{ return [r.status, j]; }}); }})
+    .then(function (p) {{
+      var status = p[0], d = p[1];
+      if (status !== 200) {{
+        sideEl.innerHTML = '<h2>' + esc(docId) + '</h2><div class="hash">' +
+          esc(d.error || ("HTTP " + status)) + "</div>";
+        return;
+      }}
+
+      d.spans.forEach(function (sp) {{
+        var b = sp.bbox, el = document.createElement("div");
+        el.className = "sp" + (sp.flagged ? " flag" : "") +
+                       (sp.fieldtype === "other" ? " note" : "");
+        el.style.left = (b[0] * 100) + "%";
+        el.style.top = (b[1] * 100) + "%";
+        el.style.width = ((b[2] - b[0]) * 100) + "%";
+        el.style.height = ((b[3] - b[1]) * 100) + "%";
+        el.title = sp.span_id + "  \u00b7  " + (sp.fieldtype || "");
+        el.textContent = sp.text;
+        pageEl.appendChild(el);
+      }});
+
+      var h = '<h2>' + esc(d.doc_id) + '</h2>';
+      h += '<div class="intact ' + (d.intact ? "y" : "n") + '">' +
+           (d.intact ? "hash matches" : "hash differs") + "</div>";
+      h += '<div class="hash">sha256 ' + esc(d.doc_hash) + "</div>";
+      h += "<h3>supplier</h3><div>" + esc(d.vendor || "unknown") + "</div>";
+      h += "<h3>why it was flagged</h3>";
+      if (!d.findings.length) h += '<div class="fi"><div class="d">no findings</div></div>';
+      d.findings.forEach(function (f) {{
+        h += '<div class="fi"><div class="c">' + esc(f.code) + "</div>";
+        h += '<div class="d">' + esc(f.detail || "") + "</div>";
+        if (f.value) h += '<div class="v">' + esc(f.value) + "</div>";
+        if (f.span_id) h += '<div class="sid">' + esc(f.span_id) + "</div>";
+        h += "</div>";
+      }});
+      h += "<h3>the whole document</h3>" +
+           '<div style="font-size:12px;color:#8b949e">' + d.spans.length +
+           " spans. Everything the reader was shown, and nothing else.</div>";
+      sideEl.innerHTML = h;
+    }})
+    .catch(function () {{
+      sideEl.innerHTML = '<h2>' + esc(docId) +
+        '</h2><div class="hash">no server \u2014 run: make serve</div>';
+    }});
+}}
+
+document.querySelectorAll("button.doc").forEach(function (b) {{
+  b.addEventListener("click", function () {{ openDoc(b.dataset.doc); }});
+}});
 document.querySelectorAll("button.ap").forEach(function (b) {{
   b.addEventListener("click", function () {{
     var doc = b.dataset.doc;
