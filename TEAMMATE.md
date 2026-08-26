@@ -84,7 +84,7 @@ pip install google-genai pytest scikit-learn xgboost pandas numpy
 PYTHONPATH=. python3 -m pytest tests/ -q
 ```
 
-You should see **`19 passed`**. If you do, everything is set up correctly.
+You should see **`39 passed`**. If you do, everything is set up correctly.
 
 These 19 tests are not normal tests. They are our security promises written as code.
 If one ever fails, one of our claims to the judges has become untrue.
@@ -213,8 +213,9 @@ of us asking in case one is slow. Tell Aditya when your email arrives.
 This is the most important number in the whole project, so read it even though you
 cannot start yet.
 
-Our simple rule-checker already catches **every** odd invoice we plant — recall 1.000,
-F1 0.865. So the AI is not there to *find* odd invoices. Rules already do that.
+Our simple rule-checker already catches almost every odd invoice we plant — recall
+0.963, F1 0.874, and when it does catch one it gives the right reason 100% of the
+time. So the AI is not there to *find* odd invoices. Rules already do that.
 
 The AI is there to decide **whether an odd invoice is actually a problem.**
 

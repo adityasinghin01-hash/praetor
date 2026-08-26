@@ -1,0 +1,9 @@
+# PRAETOR runtime + test dependencies.
+# Deliberately short: the kernel (resolver, gate, rules) is pure standard library,
+# so the security claims can be checked with nothing installed but pytest.
+
+google-genai>=1.0      # the Gemini reader and exception agent
+pytest>=8.0            # the invariants, which are the security claims
+
+# Only needed to re-render docs/architecture.png from its HTML source:
+#   pip install Pillow

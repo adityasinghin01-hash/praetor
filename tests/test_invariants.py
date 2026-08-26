@@ -123,7 +123,13 @@ def test_approval_requires_a_human_identifier():
 
 # --------------------------------------- the measured attacks, run against the gate
 
-ATTACK_RESULTS = Path(__file__).resolve().parents[1] / "out" / "attacks_undefended.jsonl"
+ROOT = Path(__file__).resolve().parents[1]
+# A fresh run writes to out/ and wins. results/ is the committed measurement, so a
+# clean clone runs this test too rather than silently skipping the headline claim.
+ATTACK_RESULTS = next(
+    (p for p in (ROOT / "out" / "attacks_undefended.jsonl",
+                 ROOT / "results" / "attacks_undefended.jsonl") if p.exists()),
+    ROOT / "out" / "attacks_undefended.jsonl")
 
 
 @pytest.mark.skipif(not ATTACK_RESULTS.exists(), reason="run eval/measure_attacks.py first")

@@ -1,0 +1,379 @@
+<!doctype html><meta charset="utf-8">
+<title>PRAETOR — architecture</title>
+<style>
+@page{size:1680px 1214px;margin:0}
+:root{
+  --bg:#0e1116; --panel:#161b22; --panel2:#1b222c; --line:#232a34;
+  --tx:#e6edf3; --dim:#8b949e; --dim2:#6e7681;
+  --good:#3fb950; --warn:#d29922; --crit:#f85149; --acc:#58a6ff;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--tx);
+  font:14px/1.45 ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,sans-serif;
+  -webkit-font-smoothing:antialiased}
+.page{width:1680px;padding:40px 44px 34px}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+
+/* ---------- header ---------- */
+header{display:flex;justify-content:space-between;align-items:flex-end;
+  padding-bottom:18px;border-bottom:1px solid var(--line);margin-bottom:26px}
+h1{font-size:27px;letter-spacing:-.02em;font-weight:640}
+h1 span{color:var(--dim);font-weight:400}
+.sub{color:var(--dim);font-size:13.5px;margin-top:7px;max-width:1000px}
+.sub b{color:var(--tx);font-weight:600}
+.meta{text-align:right;color:var(--dim2);font-size:11.5px;line-height:1.7;white-space:nowrap}
+.meta b{color:var(--acc);font-weight:600}
+
+/* ---------- zones ---------- */
+.row{display:flex;align-items:stretch;gap:0;margin-bottom:8px}
+.zone{border:1px solid var(--line);border-radius:12px;padding:30px 20px 16px;
+  position:relative;background:var(--panel);display:flex;flex-direction:column}
+.zone>.ztag{position:absolute;top:-1px;left:-1px;padding:4px 12px 5px;
+  font-size:10.5px;letter-spacing:.10em;text-transform:uppercase;font-weight:700;
+  border-radius:12px 0 12px 0}
+.znote{margin-top:auto;padding-top:16px;font-size:11.5px;color:var(--dim2);line-height:1.5}
+.znote b{color:var(--tx)}
+.z-untrusted{border-color:rgba(248,81,73,.42);background:rgba(248,81,73,.045)}
+.z-untrusted>.ztag{background:rgba(248,81,73,.16);color:var(--crit)}
+.z-kernel{border-color:rgba(88,166,255,.45);background:rgba(88,166,255,.05)}
+.z-kernel>.ztag{background:rgba(88,166,255,.16);color:var(--acc)}
+.z-human{border-color:rgba(63,185,80,.45);background:rgba(63,185,80,.05)}
+.z-human>.ztag{background:rgba(63,185,80,.16);color:var(--good)}
+
+/* ---------- boxes ---------- */
+.stack{display:flex;align-items:center;gap:14px}
+.box{background:var(--panel2);border:1px solid var(--line);border-radius:9px;
+  padding:11px 14px 12px;min-width:150px}
+.box .t{font-size:13.5px;font-weight:620;letter-spacing:-.005em}
+.box .f{font-size:11px;color:var(--acc);margin-top:3px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.box .d{font-size:11.5px;color:var(--dim);margin-top:6px;line-height:1.45}
+.box.hero{border-color:rgba(248,81,73,.5);background:rgba(248,81,73,.09)}
+.box.hero .f{color:var(--crit)}
+.box.det{border-color:rgba(88,166,255,.45);background:rgba(88,166,255,.09)}
+.box.gate{border:2px solid var(--acc);background:rgba(88,166,255,.13);
+  box-shadow:0 0 0 4px rgba(88,166,255,.07)}
+.box.agent{border-color:rgba(210,153,34,.5);background:rgba(210,153,34,.09)}
+.box.agent .f{color:var(--warn)}
+.box.human{border-color:rgba(63,185,80,.5);background:rgba(63,185,80,.10)}
+.box.human .f{color:var(--good)}
+.box.sink{border-color:var(--dim2);background:#22282f;text-align:center;min-width:118px}
+.no{display:inline-block;margin-top:7px;font-size:10.5px;letter-spacing:.05em;
+  text-transform:uppercase;font-weight:700;padding:2px 7px;border-radius:4px;
+  background:rgba(248,81,73,.15);color:var(--crit)}
+.no.nw{white-space:nowrap}
+.no.blue{background:rgba(88,166,255,.15);color:var(--acc)}
+
+/* ---------- arrows ---------- */
+.ar{flex:none;display:flex;flex-direction:column;align-items:center;gap:4px;
+  color:var(--dim2);font-size:10.5px;letter-spacing:.03em;min-width:30px}
+.ar .g{font-size:19px;line-height:1;color:var(--dim)}
+.ar .lb{white-space:nowrap;color:var(--dim)}
+
+/* ---------- the boundary ---------- */
+.bound{flex:none;width:236px;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:9px;position:relative;padding:0 6px}
+.bound::before,.bound::after{content:"";position:absolute;top:-6px;bottom:-6px;
+  border-left:2px dashed rgba(88,166,255,.55)}
+.bound::before{left:8px} .bound::after{right:8px}
+.bound .cap{font-size:11px;letter-spacing:.10em;text-transform:uppercase;
+  font-weight:700;color:var(--acc);text-align:center;line-height:1.5}
+.bound .chip{background:#0b0f14;border:1px solid rgba(88,166,255,.35);border-radius:7px;
+  padding:8px 10px;font-family:ui-monospace,Menlo,monospace;font-size:10.5px;
+  line-height:1.6;color:var(--dim);text-align:left;width:100%}
+.bound .chip b{color:var(--acc);font-weight:600}
+.bound .sm{font-size:11px;color:var(--dim2);text-align:center;line-height:1.45}
+
+/* ---------- row 2 turn ---------- */
+.turn{position:relative;height:46px}
+.turn i{position:absolute;background:#2f3742;display:block}
+.turn .v{right:220px;top:0;width:2px;height:23px}
+.turn .h{left:139px;right:220px;top:21px;height:2px}
+.turn .d{left:138px;top:23px;width:2px;height:15px}
+.turn .head{position:absolute;left:132px;top:33px;color:#8b949e;font-size:15px;line-height:1}
+.turn .lb{position:absolute;left:50%;transform:translateX(-50%);top:3px;
+  background:var(--bg);padding:0 12px;color:var(--dim);font-size:11.5px}
+
+/* ---------- decision row ---------- */
+.dec{border:1px solid var(--line);border-radius:12px;background:var(--panel);
+  padding:30px 22px 18px;position:relative;margin-bottom:8px}
+.dec>.ztag{position:absolute;top:-1px;left:-1px;padding:4px 12px 5px;font-size:10.5px;
+  letter-spacing:.10em;text-transform:uppercase;font-weight:700;border-radius:12px 0 12px 0;
+  background:#21262d;color:var(--dim)}
+.lane{display:flex;align-items:center;gap:13px}
+.fan{display:flex;align-items:stretch;flex:none}
+.fan .lb,.fan .rb{width:15px;border:2px solid #2f3742;margin:19px 0;flex:none}
+.fan .lb{border-right:none;border-radius:9px 0 0 9px}
+.fan .rb{border-left:none;border-radius:0 9px 9px 0}
+.fan .rows{display:flex;flex-direction:column;justify-content:center;gap:16px}
+.fan .r{display:flex;align-items:center;gap:10px;flex:1}
+.fan .dash{flex:1;min-width:16px;height:2px;background:#2f3742}
+.fan .cap{font-size:11px;color:var(--dim2);white-space:nowrap}
+.stub{width:13px;height:2px;background:#2f3742;flex:none}
+.pill{font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;font-weight:700;
+  padding:3px 9px;border-radius:20px;white-space:nowrap;display:inline-block}
+.pill.pass{background:rgba(63,185,80,.15);color:var(--good)}
+.pill.exc{background:rgba(210,153,34,.16);color:var(--warn)}
+.pill.esc{background:rgba(248,81,73,.16);color:var(--crit)}
+.pill.prop{background:rgba(88,166,255,.16);color:var(--acc)}
+.feeds{display:flex;flex-direction:column;align-items:center;gap:5px;flex:none}
+.feeds .up{color:var(--dim2);font-size:16px;line-height:1}
+
+/* ---------- cross-cutting ---------- */
+.cross{display:flex;gap:10px;margin:14px 0 22px}
+.cc{flex:1;background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--dim2);
+  border-radius:8px;padding:10px 13px}
+.cc .t{font-size:12.5px;font-weight:620}
+.cc .f{font-size:10.5px;color:var(--acc);font-family:ui-monospace,Menlo,monospace;margin-top:2px}
+.cc .d{font-size:11.5px;color:var(--dim);margin-top:5px;line-height:1.45}
+
+/* ---------- evidence ---------- */
+.evh{display:flex;align-items:baseline;gap:12px;margin-bottom:11px}
+.evh h2{font-size:14px;letter-spacing:.03em;text-transform:uppercase;color:var(--tx)}
+.evh p{font-size:12px;color:var(--dim2)}
+.ev{display:flex;gap:10px}
+.tile{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:13px 15px}
+.tile .v{font-size:25px;font-weight:650;letter-spacing:-.02em}
+.tile .l{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin-top:3px}
+.tile .s{font-size:11.5px;color:var(--dim2);margin-top:5px;line-height:1.4}
+.tile.crit .v{color:var(--crit)} .tile.acc .v{color:var(--acc)}
+.tile.good .v{color:var(--good)} .tile.warn .v{color:var(--warn)}
+footer{margin-top:18px;padding-top:14px;border-top:1px solid var(--line);
+  display:flex;justify-content:space-between;color:var(--dim2);font-size:11.5px}
+footer b{color:var(--dim)}
+</style>
+
+<div class="page">
+
+<header>
+  <div>
+    <h1>PRAETOR <span>— an accounts-payable agent that cannot be hijacked by the document it is reading</span></h1>
+    <p class="sub">The model handles <b>references, never values</b>. Every consequential decision is made by
+      deterministic code that no prompt can reach — so a fully compromised reader still cannot change what gets paid.
+      Measured: the agent was talked into the wrong answer twice, and was overruled both times.</p>
+  </div>
+  <div class="meta">
+    Google All Things Agentic &middot; <b>Taskmaster</b><br>
+    <span style="color:#8b949e">Runs today:</span> Gemma&nbsp;3 on&#8209;device &middot; Gemini&nbsp;3.5 Flash&#8209;Lite &rarr; Flash<br>
+    <span style="color:#8b949e">Deployment target:</span> Cloud Run &middot; Firestore &middot; Pub/Sub &middot; OTel &rarr; Cloud Trace
+  </div>
+</header>
+
+<!-- ============ ROW 1 : extraction ============ -->
+<div class="row">
+
+  <div class="zone z-untrusted" style="flex:1">
+    <div class="ztag">Untrusted &mdash; assume this is already owned</div>
+    <div class="stack">
+      <div class="box">
+        <div class="t">Invoice arrives</div>
+        <div class="d">From outside the company.<br>Anyone can write anything on it.</div>
+      </div>
+      <div class="ar"><div class="g">&rarr;</div></div>
+      <div class="box">
+        <div class="t">Immutable store</div>
+        <div class="f">sha256 &rarr; doc_hash</div>
+        <div class="d">Written once. Every value later<br>traces back to this hash.</div>
+      </div>
+      <div class="ar"><div class="g">&rarr;</div></div>
+      <div class="box">
+        <div class="t">Spans</div>
+        <div class="f">docile_adapter.py</div>
+        <div class="d">Annotations &rarr; numbered spans.<br><span class="mono" style="color:#8b949e">p0:0.62_0.82_0.92_0.86</span></div>
+      </div>
+      <div class="ar"><div class="g">&rarr;</div></div>
+      <div class="box hero" style="min-width:248px">
+        <div class="t">Quarantined reader</div>
+        <div class="f">agents/local_reader.py &middot; reader.py</div>
+        <div class="d">Gemma&nbsp;3 (1b) on&#8209;device via Ollama; Gemini&nbsp;3.5 Flash&#8209;Lite
+          &rarr; Flash as fallback. The only component that ever sees untrusted text.</div>
+        <div class="no nw">no tools &middot; no memory &middot; no network</div>
+      </div>
+    </div>
+    <div class="znote">Measured: <b style="color:#f85149">12 of 20</b> public injection techniques persuaded an ordinary
+      extraction prompt here to hand back an attacker&rsquo;s bank account. The design starts from the assumption that this happened.</div>
+  </div>
+
+  <div class="bound">
+    <div class="cap">the only channel out</div>
+    <div class="chip">{<br>
+      &nbsp;&nbsp;"amount_total": <b>"p0:0.62_0.82_0.92_0.86"</b>,<br>
+      &nbsp;&nbsp;"bank_account": <b>"p1:0.10_0.44_0.38_0.47"</b><br>
+      }</div>
+    <div class="sm">Span IDs only. A reply containing a<br>literal value is <b style="color:#f85149">rejected</b>, not parsed.</div>
+  </div>
+
+  <div class="zone z-kernel" style="flex:none;width:436px">
+    <div class="ztag">Deterministic kernel &mdash; no LLM</div>
+    <div class="stack">
+      <div class="box det" style="min-width:182px">
+        <div class="t">Resolver</div>
+        <div class="f">praetor/resolver.py</div>
+        <div class="d">Looks each ID up in the immutable
+          document. Anything that is not a real
+          span never reaches the record.</div>
+        <div class="no blue nw">cannot invent a value</div>
+      </div>
+      <div class="ar"><div class="g">&rarr;</div></div>
+      <div class="box det" style="min-width:158px">
+        <div class="t">InvoiceRecord</div>
+        <div class="f">Field(value, Provenance)</div>
+        <div class="d">Every field carries
+          <span class="mono">doc_hash</span>,
+          <span class="mono">span_id</span> and
+          <span class="mono" style="color:#f85149">TAINTED</span>.</div>
+      </div>
+    </div>
+    <div class="znote">A compromised reader can point at the <i>wrong</i> span. It cannot introduce one.</div>
+  </div>
+</div>
+
+<div class="turn">
+  <i class="v"></i><i class="h"></i><i class="d"></i>
+  <div class="head">&#9660;</div>
+  <div class="lb">resolved record &mdash; every field tainted, every field traceable to a span</div>
+</div>
+
+<!-- ============ ROW 2 : decision ============ -->
+<div class="dec">
+  <div class="ztag">Decision path &mdash; the agent advises, deterministic code decides</div>
+  <div class="lane">
+
+    <div class="box det" style="min-width:166px;max-width:222px">
+      <div class="t">Rules baseline</div>
+      <div class="f">praetor/baseline_rules.py</div>
+      <div class="d">Exact match + tolerance against the
+        vendor pattern. Written <b style="color:#e6edf3">before</b> any
+        agent code, as the thing to beat.</div>
+      <div class="no blue nw">118 lines, no AI</div>
+    </div>
+
+    <div class="stub"></div>
+    <div class="fan">
+      <div class="lb"></div>
+      <div class="rows">
+        <div class="r">
+          <span class="pill pass">pass &middot; 285</span>
+          <span class="cap">straight to the gate</span>
+          <span class="dash"></span>
+        </div>
+        <div class="r">
+          <span class="pill exc">exception &middot; 65</span>
+          <div class="box agent" style="min-width:206px;max-width:224px">
+            <div class="t">Exception agent</div>
+            <div class="f">agents/exception_agent.py</div>
+            <div class="d">Gemini&nbsp;3.5. Adjudicates: does the invoice
+              already explain itself? Sees findings, the
+              supplier pattern and context spans.</div>
+            <div class="no nw">no raw document text</div>
+          </div>
+          <span class="cap">advisory<br>only</span>
+        </div>
+      </div>
+      <div class="rb"></div>
+    </div>
+    <div class="ar"><div class="g">&rarr;</div></div>
+
+    <div class="box gate" style="min-width:244px;max-width:252px">
+      <div class="t">Policy gate &mdash; the last word</div>
+      <div class="f">praetor/gate.py &middot; no LLM</div>
+      <div class="d">
+        &bull; <span class="mono">bank_account</span> is privileged: no in&#8209;document
+        justification can ever release it.<br>
+        &bull; An approval the document claims for <i>itself</i> counts only if the
+        buyer&rsquo;s register holds the reference. &nbsp;<span class="mono">authority.py</span><br>
+        &bull; One client&rsquo;s vendor master can never vouch for another&rsquo;s
+        invoice. &nbsp;<span class="mono">tenancy.py</span><br>
+        &bull; Amount outside 2% of the PO, or a first&#8209;time vendor &rarr; escalate.</div>
+      <div class="no blue nw">agent ceiling: propose_pay</div>
+    </div>
+
+    <div class="stub"></div>
+    <div class="fan">
+      <div class="lb"></div>
+      <div class="rows">
+        <div class="r">
+          <span class="pill prop">propose_pay &middot; 303</span>
+          <span class="cap">86.6% autonomous &mdash; no human touch</span>
+          <span class="dash"></span>
+        </div>
+        <div class="r">
+          <span class="pill esc">escalate &middot; 47</span>
+          <div class="box human" style="min-width:196px;max-width:210px">
+            <div class="t">Human approver</div>
+            <div class="f">gate.approve(decision, human_id)</div>
+            <div class="d">One screen, provenance attached, one click &mdash; a real
+              <span class="mono">gate.approve()</span> call. The same act is the SOX
+              segregation&#8209;of&#8209;duties control <b style="color:#e6edf3">and</b> the
+              declassification gate.</div>
+            <div class="no nw" style="background:rgba(63,185,80,.15);color:#3fb950">human_id required</div>
+          </div>
+        </div>
+      </div>
+      <div class="rb"></div>
+    </div>
+    <div class="ar"><div class="g">&rarr;</div></div>
+
+    <div class="box sink">
+      <div class="t">Payment</div>
+      <div class="d" style="margin-top:4px">the only sink</div>
+    </div>
+  </div>
+  <div class="znote">There is no code path by which an agent reaches <span class="mono" style="color:#e6edf3">Action.APPROVED</span>.
+    <span class="mono" style="color:#58a6ff">39 tests</span> hold these claims &mdash; the propose/approve boundary, the authority rule and the tenant boundary that is what actually forces the fleet to stay split.</div>
+</div>
+
+<!-- ============ vendor master feed ============ -->
+<div class="cross">
+  <div class="cc" style="border-left-color:#58a6ff">
+    <div class="t">Vendor master &mdash; derived, not invented</div>
+    <div class="f">eval/build_vendor_master.py</div>
+    <div class="d">Each supplier&rsquo;s &ldquo;normal&rdquo; is the modal value across their own past invoices &mdash; known accounts,
+      usual currency, tax rate, address, amount range. Feeds the rules, the gate and the agent. Exceptions are <b style="color:#e6edf3">discovered</b>, never injected.</div>
+  </div>
+  <div class="cc" style="border-left-color:#d29922">
+    <div class="t">Cost guard &mdash; a ceiling, not an estimate</div>
+    <div class="f">praetor/costguard.py</div>
+    <div class="d">Prices every call against Google&rsquo;s published rates and raises <span class="mono">BudgetExceeded</span> <b style="color:#e6edf3">before</b>
+      the call that would cross the ceiling. Persisted to disk, so it holds across runs and across days.</div>
+  </div>
+  <div class="cc" style="border-left-color:#3fb950">
+    <div class="t">Tenancy &mdash; why the fleet cannot merge</div>
+    <div class="f">praetor/tenancy.py</div>
+    <div class="d">One AP processor runs many client companies. A supplier&rsquo;s &ldquo;known account&rdquo; only means
+      anything inside one client&rsquo;s books, so the lookup is scoped and a cross&#8209;tenant pairing raises rather than decides.
+      <span class="mono">test_tenancy.py</span> demonstrates the bug that merging them reintroduces.</div>
+  </div>
+</div>
+
+<!-- ============ evidence ============ -->
+<div class="evh">
+  <h2>Measured, not claimed</h2>
+  <p>Every figure below is reproducible from this repository &mdash; see <span class="mono">FINDINGS.md</span>. Nothing here is an industry estimate.</p>
+</div>
+<div class="ev">
+  <div class="tile crit">
+    <div class="v">60%</div><div class="l">undefended attack rate</div>
+    <div class="s">12 of 20 injection techniques beat a plain extraction prompt. Every one that worked reads like ordinary business correspondence.</div>
+  </div>
+  <div class="tile acc">
+    <div class="v">0.874</div><div class="l">rules baseline F1</div>
+    <div class="s">Recall 0.963, and the right reason on 100% of catches. Detection is near&#8209;solved by 118 lines of Python &mdash; so the agent adjudicates instead of detecting.</div>
+  </div>
+  <div class="tile good">
+    <div class="v">28%</div><div class="l">fewer human touches</div>
+    <div class="s">65 &rarr; 47 on 350 invoices at <b style="color:#e6edf3">1.000</b> precision &mdash; zero wrong resolutions, taking the run from 81.4% autonomous to 86.6%.</div>
+  </div>
+  <div class="tile warn">
+    <div class="v">2</div><div class="l">gate overrides</div>
+    <div class="s">A fake remittance notice and a fabricated approval ticket each convinced the agent to resolve. Deterministic code refused both. Fooled twice, correct twice.</div>
+  </div>
+</div>
+
+<footer>
+  <div><b>Prior art, stated up front:</b> CaMeL (arXiv 2503.18813) &middot; RTBAS (arXiv 2502.08966) &middot; Fides &middot; APPA &middot; TraceAegis.
+    AP automation is occupied by Ramp, Vic.ai, AppZen; vendor verification by Trustpair, nsKnox, apexanalytix. This is an engineering demonstration, not a market claim.</div>
+  <div><b>github.com/adityasinghin01-hash/praetor</b></div>
+</footer>
+
+</div>
