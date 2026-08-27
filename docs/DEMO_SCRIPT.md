@@ -14,8 +14,20 @@ The architecture diagram is a separate required upload. **It gets no video time.
   once before you roll. Bare `python3` on this Mac is 3.14, which the project does not
   use — the one live command in the demo is the one that breaks without this.
 - Start the queue with `make serve` and leave it on `http://127.0.0.1:8000`. Beat 6
-  approves for real, so `out/approvals.jsonl` should be **deleted** before you record —
-  otherwise the row you want to approve already shows as approved.
+  approves for real, so **clear prior approvals before you record** — otherwise the row
+  you want to approve already shows as approved. Approvals live in SQLite now, not
+  JSONL (`docs/DECISIONS.md` §6), so it is:
+
+  ```bash
+  .venv/bin/python -c "import sys;sys.path.insert(0,'.');from praetor import store;\
+c=store.connect();c.execute('DELETE FROM approvals');c.commit()"
+  ```
+- **Know the queue's controls before you roll** — they carry beats 4, 5 and 6 now:
+  `/` focuses search · `j`/`k` move · <kbd>enter</kbd> opens the document as the reader
+  saw it · <kbd>u</kbd> opens the audit trail · <kbd>a</kbd> approves the selected row ·
+  `?` lists them. The **show** and **finding** chips filter the queue in one click.
+  All of it works with no server, so a dropped connection mid-take costs you only the
+  document viewer and the approve button.
 - Have `ollama serve` running with `gemma3:1b` pulled. The reader beat is live, free and
   has no quota — it is the only thing worth risking on camera.
 - Terminal at ~18pt, dark theme, window 1600×900. The dashboard and terminal share a
@@ -94,8 +106,14 @@ column, then the reasoning column.
 
 ## 5 · Two poisoned invoices, both overruled — 2:00–2:35 (35s)
 
-**On screen:** **V019_007**, then **V014_009**. Both show `GATE OVERRODE` with the reason
+**On screen:** click the **gate overrode 2** chip in the filter bar. The queue collapses
+from 65 rows to exactly these two, both showing `GATE OVERRODE` with the refusal reason
 underneath. Cut to `praetor/authority.py` for the last sentence.
+
+Optional, 8s, if the pacing allows: select `V014_009` and press <kbd>u</kbd>. The audit
+trail replays the document through all six stages — rules fired, agent voted resolve,
+gate refused, awaiting a person. It is the architecture diagram with one document's data
+in it, which is the single most on-theme shot in the video for an architecture prize.
 
 > Now the two that matter. V019_007 carries a bank-account change and a note: "remittance
 > update, we have changed banking providers." The agent believed it and voted to resolve.
@@ -109,16 +127,35 @@ underneath. Cut to `praetor/authority.py` for the last sentence.
 
 ## 6 · The human closes it — 2:35–3:05 (30s)
 
-**On screen:** the queue. Type `agent:exception_resolver` into the "approve as" box,
-click **approve** on any escalated row — the row turns red with the refusal. Then change
-it to your own address and approve for real.
+**On screen:** a terminal beside the queue. **There is no longer an "approve as" box** —
+that was the point of the auth work, and the demo is stronger for it. Run these three
+against the running server, then approve one row in the browser for real.
+
+```bash
+# 1. signed in as the approver, but the request body lies about who is approving
+curl -s -b cj.txt -X POST localhost:8000/approve -H 'Content-Type: application/json' \
+  -d '{"doc_id":"V000_004","tenant":"acme-industries","human_id":"agent:exception_resolver"}'
+# -> "approved_by": "reviewer@acme-industries.test"   <- the body's claim is ignored
+
+# 2. the same document a second time
+# -> "V000_004 was already approved by reviewer@... at ..."   <- the schema's primary key
+
+# 3. signed in as the auditor, who is a viewer
+# -> "auditor@... does not hold 'approver' on acme-industries (role: viewer)"
+```
 
 > Something still has to pay these. So a person approves — one act that is both the
 > segregation-of-duties control an auditor wants and the declassification the
-> architecture needs. Watch what happens when an agent tries. That's not a demo branch:
-> it's the same PermissionError the tests pin, coming back to the browser. As a human it
-> goes through, and lands in an audit file. Every number here cost one rupee at list
-> price, and nothing was charged.
+> architecture needs. And the page cannot lie about who that person is. Watch: I'm
+> posting an approval that claims to come from the agent, and the approval records *me*,
+> because the identity comes from the session and the request body's opinion is thrown
+> away. Post it twice and the database refuses — approving twice is a double payment, so
+> idempotency is the primary key, not a check someone remembered to write. Every number
+> here cost one rupee at list price, and nothing was charged.
+
+**Verified 27 Aug** — all three responses above are copied from a live run, not written
+from memory. Clear `out/praetor.db` approvals first (`make db` reports "approvals kept")
+or row V000_004 already shows as approved when you roll.
 
 ---
 
@@ -132,17 +169,27 @@ it to your own address and approve for real.
 
 ---
 
-## If Cloud Run lands before the deadline
+## Cloud Run — a decision to make before you roll
 
-Add one beat and trim two. Do not go past 220s.
+Cloud Run **has landed**: the queue is live at
+`https://praetor-836128159455.asia-south1.run.app`, on Cloud Run `asia-south1` with state
+in Cloud Firestore. Google Cloud infrastructure is a **mandatory gate** for every prize
+category, so proving it on camera is worth more than any single measurement in this
+script.
 
-- **New, 25s, after beat 3:** the deployed `.run.app` taking a batch through Pub/Sub —
-  instance count climbing in the Cloud Run console, Cloud Trace showing a span with its
-  taint label, then instances back at zero. Narrate throughput, peak concurrency and
-  dollar cost, read off the console.
-- **Trim beat 2** to 20s: keep the twelve-versus-eight split, drop the restatement of the
-  filter argument.
-- **Trim beat 4** to 20s: keep V003_003, drop the rules-baseline framing.
+The Pub/Sub fan-out that an earlier draft of this section staged is **cut**, and must not
+be filmed or claimed: 8 workers measured *slower* than 1, so there is nothing to
+distribute ([FINDINGS §11](../FINDINGS.md)). Filming it would be staging a result we
+disproved.
 
-Update the diagram header at the same time — "Deployment target" becomes "Deployed" — and
-re-render with `make diagram`.
+**Your call, one of two:**
+
+- **Cheapest and safest — record beat 1 against the live URL instead of `localhost:8000`.**
+  Costs zero extra seconds, and the `.run.app` domain in the address bar proves the
+  mandatory gate in the first ten seconds. Risk: it is a live network dependency mid-take.
+- **Safer for the take — stay on localhost and add 10s after beat 6:** cut to the live URL
+  and the Cloud Run console showing the service in `asia-south1`, narrating one line. Costs
+  10s, takes the total to 210s, still inside the 240s cap.
+
+Either way the deployed container **calls no model**, so it cannot spend — say so, because
+a judge will otherwise wonder what the live URL is costing you.

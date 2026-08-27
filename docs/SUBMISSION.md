@@ -163,8 +163,10 @@ And that a measurement you can't reproduce is worse than no measurement.
 ## What's next for PRAETOR
 
 ```
-Deploy the service itself to Cloud Run — state already runs on Cloud Firestore — and
-report throughput, peak concurrency and real dollar cost from a Pub/Sub fan-out run.
+Put a front door on it. The largest gap between this and a product is that a real
+invoice arrives as a PDF with no spans, so nothing downstream can run — there is no OCR
+and no layout stage. That, not the security model, is what stands between PRAETOR and
+something an AP team could use.
 
 Close the remaining gap in the authority rule: a document that is persuasive while naming
 no checkable reference at all is still not caught.
@@ -184,7 +186,7 @@ python, google-gemini, gemma, ollama, google-genai-sdk, google-cloud-firestore, 
 ## Testing instructions (scored, publicly visible)
 
 ```
-Requires Python 3.11–3.13 (not 3.14) and make. No API key, no cloud account, no billing.
+Requires Python 3.11 or newer and make. No API key, no cloud account, no billing.
 
     git clone https://github.com/adityasinghin01-hash/praetor.git
     cd praetor
@@ -192,25 +194,43 @@ Requires Python 3.11–3.13 (not 3.14) and make. No API key, no cloud account, n
     make demo
 
 make demo runs in about ten seconds, makes no network calls, and costs nothing. Expect
-39 passing tests, the rules baseline at precision 0.800 / recall 0.963 / F1 0.874, and
+115 passing tests, the rules baseline at precision 0.800 / recall 0.963 / F1 0.874, and
 dashboard/index.html — the queue a human actually works.
+
+Python 3.11 or newer. Verified from a clean clone on 3.13.14 and 3.14.6 on 27 Aug.
 
 To prove the corpus is reproducible rather than committed-and-trusted:
 
     make verify
 
 This regenerates all 350 invoices from a fixed seed. The result is byte-identical to the
-committed corpus, so git status stays clean and every downstream number lands on the same
+committed corpus — nothing under data/ moves — and every downstream number lands on the same
 values.
 
 For the queue with working approvals:
 
     make serve            # http://127.0.0.1:8000
 
-Every flagged value shows its provenance — TAINTED, the span it came from, the hash of
-the document it came from. The approve button calls the real praetor.gate.approve().
-Type agent:exception_resolver into the "approve as" box to watch the real PermissionError
-come back to the browser.
+Sign in with reviewer@acme-industries.test / praetor (the sign-in page lists the other
+seeded accounts). Every flagged value shows its provenance — TAINTED, the span it came
+from, the hash of the document it came from. The approve button calls the real
+praetor.gate.approve().
+
+The queue filters by finding code and outcome, searches, and is keyboard-navigable — press
+? for the list. Press u on any row for its audit trail: the document replayed through all
+six pipeline stages, read from the stored record only.
+
+The identity of an approver comes from the session, never from the page. To see that,
+approve while claiming in the request body to be the agent — the claim is discarded and
+the approval records the signed-in human:
+
+    curl -b cookies.txt -X POST localhost:8000/approve -H 'Content-Type: application/json' \
+      -d '{"doc_id":"V000_004","tenant":"acme-industries","human_id":"agent:exception_resolver"}'
+
+Post it twice and the second is refused by the schema's primary key — approving twice is a
+double payment, so idempotency is structural rather than a check someone remembered.
+auditor@acme-industries.test is a viewer and is refused outright. The PermissionError that
+stops an agent reaching APPROVED is pinned by the test suite.
 
 The two targets that call the Gemini API are make attacks and make adjudicate. Both need
 GOOGLE_API_KEY, and both are capped by praetor/costguard.py, which prices each call

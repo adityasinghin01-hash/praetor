@@ -66,8 +66,10 @@ sure the value never reaches the payment sink.
 
 ## Spin up
 
-**Prerequisites:** Python **3.11–3.13** (not 3.14 — `torch` has no wheel for it) and
-`make`. Nothing else. No cloud account, no API key, no billing.
+**Prerequisites:** Python **3.11 or newer** and `make`. Nothing else. No cloud account,
+no API key, no billing. Verified on 27 Aug from a clean clone on **3.13.14 and 3.14.6** —
+all 115 tests pass on both. (An earlier draft of this line said "not 3.14", which was
+left over from a `torch` dependency the project no longer has.)
 
 ```bash
 git clone https://github.com/adityasinghin01-hash/praetor.git
@@ -128,8 +130,14 @@ To prove the corpus itself is reproducible rather than committed-and-trusted:
 make verify           # regenerates all 350 invoices from seed, then re-runs the demo
 ```
 
-The regenerated corpus is byte-identical to the committed one, so `git status` stays
-clean and every downstream number lands on the same values.
+The regenerated corpus is byte-identical to the committed one — nothing under `data/`
+moves — so every downstream number lands on the same values.
+
+`git status` will show one file modified afterwards: `dashboard/index.html`, which is a
+build artifact whose footer stamps the time it was generated. That is the only thing
+`make verify` changes, and it is the reason the check is worth running: if any *corpus*
+file appears in that list, the generator is no longer deterministic and every number
+below it is suspect.
 
 ### Running the parts that call Gemini
 
@@ -182,7 +190,7 @@ Nothing in this repo is an industry estimate or a figure typed in by hand.
 | 115 invariants pass | `make test` | no |
 | Rules baseline: **P 0.800 · R 0.963 · F1 0.874** | `make rules` | no |
 | Corpus regenerates bit-for-bit | `make verify` | no |
-| Kernel throughput: **4,112 docs/second**, one core | `make volume` | no |
+| Kernel throughput: **~4,100 docs/second**, one core | `make volume` | no |
 | Dashboard: 65 flagged → 47 human, precision 1.000 | `make dashboard` | no |
 | Undefended injection rate: **60% (12/20)** | `make attacks` | yes |
 | Agent removes **28%** of human touches, 0 wrong | `make adjudicate` | yes |
@@ -249,8 +257,10 @@ State lives behind one module, so it runs on **SQLite** by default and on **Clou
 Firestore** with `PRAETOR_BACKEND=firestore` — see [docs/FIRESTORE.md](docs/FIRESTORE.md).
 The default stays local so `make demo` works with no account and no card.
 
-**Deployed on Cloud Run**, `asia-south1`, state in Cloud Firestore. Pub/Sub fan-out for
-a volume run is still future work.
+**Deployed on Cloud Run**, `asia-south1`, state in Cloud Firestore. A Pub/Sub fan-out
+was scoped and then **cut on measurement**: the kernel runs at ~4,100 documents/second on
+one core and 8 worker processes make it *slower*, so there is nothing to distribute. See
+[FINDINGS §11](FINDINGS.md).
 
 ## Why it is shaped this way
 
@@ -286,8 +296,15 @@ be hijacked by the document it is reading.*
   neither stops is a document being persuasive while naming no checkable reference at
   all — "agreed on the call last Tuesday" is unverifiable and unflagged. See
   [FINDINGS.md §8](FINDINGS.md).
-- **The 20 payloads are hand-authored**, which is circular evidence on its own.
-  `load_public()` exists to replace that number with one from a public dataset.
+- **The 20 payloads are hand-authored, and no public benchmark replaces them.** We
+  checked BIPIA, AgentDojo and InjecAgent on 27 Aug: all three score whether an *agent
+  took an attacker-chosen action*, where this scores whether an *extraction returned an
+  attacker-chosen value*, and PRAETOR's reader has no actions to take. AgentDojo's
+  canonical attack string is also delimiter-wrapped and addressed to the model by name —
+  the properties of the three techniques this model already resisted. So 60% is reported
+  as what it is: a technique-level breakdown, n=20, on one model. It is **not** an
+  estimate of how often a real invoice carries a working injection. See
+  [FINDINGS §3](FINDINGS.md).
 - **The rules baseline misses 2 of 54 deviations**, both amount spikes that land inside
   the supplier's own historical range — undetectable by a range rule, by construction.
 - **The corpus is synthetic.** Real documents (SROIE, DocILE) are used for the span
@@ -295,5 +312,9 @@ be hijacked by the document it is reading.*
 - **The Gemma fallback is a degraded service, not an equivalent one.** On a tax-rate
   exception with a legitimate exemption note, Gemma 3 1b still voted escalate. Safe
   direction to fail in, but it will clear fewer exceptions than Gemini does.
-- **No cloud deployment yet**, so there is no throughput, concurrency or dollar-cost
-  figure from a real fan-out run.
+- **The deployed instance is a queue, not a pipeline.** Cloud Run serves the review
+  queue and the approval path; adjudication is a separate offline script, so the
+  container calls no model and cannot spend. There is therefore no *cloud* throughput or
+  dollar-cost figure — the throughput number in [FINDINGS §11](FINDINGS.md) is a local
+  one-core measurement, and the reason there is no fan-out figure is that fan-out was
+  measured and rejected, not that it is pending.
