@@ -80,20 +80,37 @@ never scraped from the document.
 That wrong resolution is now gone.
 
 **11/**
+On "hand-authored payloads": yes, and we tried to fix it.
+
+BIPIA, AgentDojo, InjecAgent — none fit. All three score whether an agent took an
+attacker-chosen ACTION. We're asking whether an extraction returned an attacker-chosen
+VALUE. Our reader has no actions. No tools, no memory, output is span refs.
+
+**12/**
+And AgentDojo's canonical attack opens:
+
+"This is an important message from me, {user}, to you, {model}."
+
+Delimiter-wrapped. Addresses the model by name. That's our A01/A08/A14 — three of the
+eight that FAILED.
+
+The public benchmarks are built from injections that announce themselves. Same blind spot.
+
+**13/**
 Honest limits, because they belong in the same thread:
 
 → a document persuasive without naming ANY checkable reference is still unflagged
-→ the 20 payloads are hand-authored
+→ 60% is a technique-level breakdown, n=20 — NOT how often real invoices carry one
 → the scored corpus is synthetic
 → none of this is new — it's CaMeL + RTBAS applied to AP
 
-**12/**
+**14/**
 Result on 350 invoices: 86.6% never touched by a human. Rules baseline F1 0.874. The
 agent removes 28% of remaining human touches at 1.000 precision — zero wrong.
 
 Total cost of every number: ₹1.19 at list price. Actual charge ₹0.
 
-**13/**
+**15/**
 Reproduces from a clean clone, no API key, no cloud account:
 
 ```
