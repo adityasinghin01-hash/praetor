@@ -6,9 +6,11 @@ does as of the current commit — if you change a number, change it in
 
 **Checklist before you submit**
 
-- [ ] Repo shared with `testing@devpost.com` **and** `cloudhackathons@google.com`
-      — the rules allow a private repo if both are granted access, so invite them
-      through the GitHub web UI (email invites work there; the API needs usernames)
+- [x] **Repo access — nothing to do.** The repo is **public**
+      (`github.com/adityasinghin01-hash/praetor`, verified 27 Aug). The rule requiring
+      `testing@devpost.com` and `cloudhackathons@google.com` to be granted access is a
+      concession *for private repos*; it does not apply. Only revisit this if you decide
+      to make the repo private before submitting.
 - [x] **Google Cloud infrastructure** — deployed on Cloud Run (`asia-south1`) with
       state in Cloud Firestore. Show both consoles in the video.
 - [ ] `docs/architecture.png` uploaded — this is a **required** file upload
