@@ -66,10 +66,18 @@ sure the value never reaches the payment sink.
    ([FINDINGS §18](FINDINGS.md)). It is not magic — an attacker who stops writing
    sentences and prints a bare account-shaped token beats it completely
    ([FINDINGS §17](FINDINGS.md)); step 5 is what stands after that.
-7. The **rules baseline** (no AI) flags deviations from what that supplier normally does.
-8. The **exception agent** adjudicates the flagged ones. It sees findings and context —
+7. The **refusal network** (`praetor/refusal.py`, no LLM) is the one thing allowed to
+   cross a client boundary. One client's vendor master must never vouch for another's
+   invoice — measured, a merged master proposes payment to the wrong client's genuine
+   account **12 times out of 12** ([FINDINGS §21](FINDINGS.md)). But an account a person
+   *refused* to pay is different: sharing it can, at worst, make a second person look.
+   So refusals cross and trust never does, and only a salted fingerprint and a count of
+   clients travel — never the account, never who refused. It can only ever add a check;
+   that is asserted over every combination of inputs.
+8. The **rules baseline** (no AI) flags deviations from what that supplier normally does.
+9. The **exception agent** adjudicates the flagged ones. It sees findings and context —
    never raw document text.
-9. The **policy gate** (no LLM) has the last word. Four rules run after the agent, all
+10. The **policy gate** (no LLM) has the last word. Four rules run after the agent, all
    deterministic:
    - a tainted account not in the vendor master cannot be paid;
    - an authorisation the document claims for itself counts only if it names a
@@ -85,7 +93,7 @@ sure the value never reaches the payment sink.
      [DECISIONS #14](docs/DECISIONS.md).
 
    And **the agent can only `propose`, never `approve`**.
-10. A human approves. That single act is both the SOX segregation-of-duties control and
+11. A human approves. That single act is both the SOX segregation-of-duties control and
    the declassification step — and in `make serve` it is a real button that calls the
    real `gate.approve()`.
 
@@ -95,7 +103,7 @@ sure the value never reaches the payment sink.
 
 **Prerequisites:** Python **3.11 or newer** and `make`. Nothing else. No cloud account,
 no API key, no billing. Verified on 27 Aug from a clean clone on **3.13.14 and 3.14.6** —
-all 466 tests pass on both. (An earlier draft of this line said "not 3.14", which was
+all 508 tests pass on both. (An earlier draft of this line said "not 3.14", which was
 left over from a `torch` dependency the project no longer has.)
 
 ```bash

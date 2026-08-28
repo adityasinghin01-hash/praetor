@@ -23,24 +23,59 @@ from dashboard import language
 from dashboard.language import EXPLANATIONS, FORBIDDEN, explain, outcome_sentence
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-EMITTERS = ["praetor/baseline_rules.py", "praetor/gate.py", "praetor/canary.py"]
 CODE = re.compile(r"^[A-Z][A-Z0-9_]{4,}$")
+
+
+def _emitters() -> list[pathlib.Path]:
+    """Every file in the kernel that actually constructs a Finding.
+
+    This was a hard-coded list of three files, and that made it a guard that passes
+    vacuously: `praetor/refusal.py` was added with a new finding code, reached a screen
+    untranslated, and this test said nothing because the file was not on the list. The
+    modules are discovered now, so the next one cannot slip through either.
+    """
+    out = []
+    for path in sorted((ROOT / "praetor").rglob("*.py")):
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                    and node.func.id == "Finding"):
+                out.append(path)
+                break
+    return out
 
 
 def _codes_in_source() -> set[str]:
     """Every SCREAMING_CASE string literal in the modules that raise findings.
 
-    Discovered rather than listed, so a new finding cannot be added without either
-    translating it or failing this test.
+    `__all__` is skipped. Its entries are export names, not finding codes, and counting
+    them made this test demand a translation for `REFUSED_ELSEWHERE` -- the name of the
+    constant -- while the actual code it holds was already translated. A check that
+    reports a phantom is a check people learn to override.
     """
     found: set[str] = set()
-    for rel in EMITTERS:
-        tree = ast.parse((ROOT / rel).read_text())
+    for path in _emitters():
+        tree = ast.parse(path.read_text())
+        exported = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and any(
+                    isinstance(t, ast.Name) and t.id == "__all__" for t in node.targets):
+                for sub in ast.walk(node.value):
+                    if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                        exported.add(sub.value)
         for node in ast.walk(tree):
             if isinstance(node, ast.Constant) and isinstance(node.value, str):
-                if CODE.match(node.value):
+                if CODE.match(node.value) and node.value not in exported:
                     found.add(node.value)
     return found
+
+
+def test_the_emitter_list_is_discovered_and_not_empty():
+    """Teeth for the discovery above: if the scan stops matching, everything downstream
+    passes vacuously, which is exactly how the gap it replaced went unnoticed."""
+    names = {p.name for p in _emitters()}
+    assert {"baseline_rules.py", "gate.py", "canary.py", "refusal.py"} <= names, (
+        f"the Finding-emitter scan has rotted; it found {sorted(names)}")
 
 
 def _displayed_strings() -> list[tuple[str, str]]:

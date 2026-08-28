@@ -12,7 +12,7 @@ for its reasoning; where they disagree, this file wins.
 
 | | |
 |---|---|
-| Tests | **466 passing tests**, and 460 of them with only `pytest` installed |
+| Tests | **508 passing tests**, and 502 of them with only `pytest` installed |
 | Kernel | `praetor/` imports nothing outside the standard library, and nothing from the web layer |
 | Live | https://praetor-836128159455.asia-south1.run.app · `/app` is the three-tab UI |
 | Rules baseline | precision 0.800 · recall 0.963 · **F1 0.874** on 350 invoices, 5 layouts |
@@ -22,9 +22,10 @@ for its reasoning; where they disagree, this file wins.
 | Second path | **0.997** held out by layout · **0 of 100** payloads beat both paths |
 | Filter, measured | Model Armor flags **7 of 8** that already failed, **3 of 12** that work |
 | Automation | a PDF in a bucket is a queue entry in **6.45s**, no manual step |
+| The moat | a merged vendor master pays the wrong account **12 of 12**; refusals cross, trust never does |
 | Spent to date | about **₹27 of credit**. Money has never been the constraint |
 
-**Phases 1 to 4 are done.** Phase 5 is next.
+**Phases 1 to 5 are done.** Phase 6 is next.
 
 ---
 
@@ -104,15 +105,35 @@ Not claimed: the deployed pipeline has no vendor history, so every document esca
 a first-time supplier. The automation is real; the decision quality in the cloud is not
 yet the local decision quality.
 
-## Phase 5 — The moat · **NEXT**
+## Phase 5 — The moat · **DONE**
 
-A real second tenant. The refusal network: an account refused at one client, seen at another,
-is a warning — and sharing a refusal can only raise a check, never cause a payment. That
-asymmetry is the original idea here, and the safety property gets pinned as a test. Plus safe
-retrieval (never index what the supplier sent; never search using the invoice's own text) and
-queue ordering that learns from decisions people actually made.
+A real second tenant (`eval/make_tenant_b.py`): `borealis`, 80 invoices, sharing six
+suppliers with `acme` and paying every one of them somewhere else. Written beside the
+frozen corpus, never over it.
 
-## Phase 6 — The product surface
+**Isolation, measured rather than fixtured.** Substitute the other client's genuine
+account for the same supplier: the isolated master escalates 12 of 12, and a merged
+master proposes payment **12 of 12**. Total, not marginal.
+
+**The refusal network** (`praetor/refusal.py`) is the original idea, and it is an
+asymmetry: sharing *trust* lets one client's mistake pay another's attacker, sharing a
+*refusal* can at worst cause a second person to look. So refusals cross the boundary and
+approvals never do. Only a salted fingerprint and a count of clients travel — never the
+account, never who refused. The safety property is asserted over every combination of
+inputs, and three plausible bugs each fail it. Cost, stated: one refusal sent 13 invoices
+at another client to a person.
+
+**Safe retrieval** (`praetor/retrieval.py`): a document may supply a **key**, never a
+**query**. A key matches exactly and returns the buyer's record or nothing; a ranking has
+partial credit, and partial credit is steerable. Enforced with the taint label that
+already exists, so a caller who relabels a document value as buyer-side is refused anyway.
+
+**Queue ordering** (`praetor/queueing.py`): a permutation, never a filter — a ranker that
+can drop an item can hide one. It has learned **nothing**, because the record holds 0
+human decisions, and `make queue` prints that in those words rather than implying a
+ranking. The pipe is built; the water is not claimed.
+
+## Phase 6 — The product surface · **NEXT**
 
 FastAPI first — paging, live updates, uploads — because the frontend gets built twice
 otherwise. The JSON contract in `dashboard/api.py` does not change, so it is a transport swap.

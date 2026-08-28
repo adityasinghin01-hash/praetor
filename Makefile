@@ -9,6 +9,8 @@
 #   make readpath   the real path end to end: reader -> resolver -> rules (free)
 #   make volume     5,000 documents through the kernel: throughput and concurrency
 #   make pathb      fit the second extraction path, then try to break it
+#   make tenancy    two client companies, shared suppliers, and the refusal network
+#   make queue      what the queue ordering has learned (currently: nothing)
 #   make ingest     the automated front door, offline and free
 #   make verify     everything that needs no API key, end to end
 #
@@ -19,7 +21,7 @@
 PY := $(shell [ -x .venv/bin/python ] && echo .venv/bin/python || echo python3)
 RUN := PYTHONPATH=. $(PY)
 
-.PHONY: help install test demo verify corpus rules db dashboard serve trace readpath canary pathb app pdf volume attacks adjudicate twopath armor ingest diagram clean
+.PHONY: help install test demo verify corpus rules db dashboard serve trace readpath canary pathb app pdf volume attacks adjudicate twopath armor ingest tenancy queue diagram clean
 
 help:
 	@sed -n '2,10p' Makefile | sed 's/^# \?//'
@@ -125,6 +127,17 @@ adjudicate:
 # spans of the same document. 100 model calls, about Rs 8. Resumable.
 twopath:
 	$(RUN) eval/run_twopath.py --delay 2
+
+# The moat: a second client company, the isolation claim measured on real documents,
+# and what the refusal network is and is not allowed to do. Free, no model.
+tenancy: 
+	$(RUN) eval/make_tenant_b.py
+	@echo
+	$(RUN) eval/run_tenancy.py
+
+# What the queue ordering has learned from decisions people actually made.
+queue:
+	$(RUN) eval/run_queue.py
 
 # The automated front door, run locally on a saved Document AI response: no network,
 # no credentials, no charge. This is the exact path the Cloud Run ingest service runs.

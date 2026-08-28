@@ -101,6 +101,13 @@ EXPLANATIONS: dict[str, Explanation] = {
         "Treat this as suspicious. Call the supplier on the number in your own records. "
         "Do not use any contact details printed on this invoice.",
         "stop"),
+    "ACCOUNT_REFUSED_ELSEWHERE": Explanation(
+        "Someone at another company that uses this service refused to pay this same "
+        "account.",
+        "Treat this as a warning, not as proof. Call the supplier on the number in your "
+        "own records — not the number on this invoice — and confirm the account before "
+        "you pay it.",
+        "stop"),
     "ORIGIN_UNKNOWN": Explanation(
         "We could not tell which part of the invoice the bank account was printed in.",
         "Open the invoice and check the account is in the payment section. If it is "
