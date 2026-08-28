@@ -90,6 +90,21 @@ def spans_of(annotation: dict, doc_hash: str) -> dict[str, str]:
     return out
 
 
+def span_kinds_of(annotation: dict) -> dict[str, str]:
+    """span_id -> the document's own field type for that span.
+
+    Same keys as `spans_of`, but the label instead of the text. `praetor/canary.py`
+    uses it to ask whether a value arrived from a place it could legitimately come
+    from -- a question that can be answered without reading a single character of the
+    span, which is why an attacker cannot write their way past it.
+    """
+    out: dict[str, str] = {}
+    for fld in annotation.get("field_extractions", []):
+        sid = _span_id(int(fld.get("page", 0)), fld.get("bbox", [0, 0, 0, 0]))
+        out[sid] = str(fld.get("fieldtype", "") or "")
+    return out
+
+
 def report_unmapped(annotation_dir: str | Path, limit: int = 500) -> Counter:
     """Count fieldtypes we do NOT map. A large count means FIELD_MAP is wrong."""
     seen: Counter = Counter()

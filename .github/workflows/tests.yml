@@ -1,0 +1,77 @@
+# Tests on every push, plus the one check that carries the project's central claim.
+#
+# PRAETOR's argument is that the security-critical path is small, dependency-free and
+# checkable by anyone. That is easy to say in a README and easy to stop being true the
+# first time somebody adds a convenient import to `praetor/`. So it is a CI job: install
+# nothing but pytest, run the suite, and fail if the kernel needs anything else.
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  tests:
+    name: full suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+      - run: pip install -r requirements.txt
+
+      # The corpus is committed, but the artifacts derived from it are not (`out/` is
+      # gitignored). Build them here, so the tests that read them actually run instead
+      # of skipping — a suite that silently skips its newest tests is worse than no CI.
+      - name: build the derived artifacts
+        run: make rules
+
+      - name: the full suite
+        run: make test
+
+      - name: nothing derived has drifted from the corpus
+        run: PYTHONPATH=. python -m pytest tests/test_no_stale_artifacts.py -q
+
+  kernel-is-stdlib-only:
+    name: kernel runs on the standard library alone
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      # Deliberately NOT requirements.txt. If the security claim is true, the invariants
+      # pass with pytest and nothing else installed.
+      - run: pip install pytest
+
+      - name: no third-party import in praetor/
+        run: |
+          python - <<'PY'
+          import ast, pathlib, sys
+          bad = []
+          for p in sorted(pathlib.Path("praetor").rglob("*.py")):
+              for n in ast.walk(ast.parse(p.read_text())):
+                  if isinstance(n, (ast.Import, ast.ImportFrom)) and n.col_offset == 0:
+                      mods = ([a.name.split(".")[0] for a in n.names]
+                              if isinstance(n, ast.Import)
+                              else [(n.module or "").split(".")[0]])
+                      for m in mods:
+                          if m and m not in sys.stdlib_module_names and m != "praetor":
+                              bad.append(f"{p}:{n.lineno} imports {m}")
+          if bad:
+              print("\n".join(bad))
+              sys.exit("praetor/ must import nothing outside the standard library")
+          print("praetor/ imports nothing outside the standard library")
+          PY
+
+      - name: the kernel must not depend on the web layer
+        run: |
+          ! grep -rn "from dashboard\|import dashboard" praetor/
+
+      - name: the suite, with only pytest installed
+        run: PYTHONPATH=. python -m pytest tests/ -q

@@ -1,0 +1,227 @@
+{
+ "aalborg industrieteknik gmbh": {
+  "city": "Utrecht",
+  "contact_name": "Marta Lindqvist",
+  "email": "accounts@aalborg.example",
+  "name": "Aalborg Industrieteknik GmbH",
+  "phone": "+31 58 332 2825",
+  "source": "buyer records",
+  "verified_on": "2026-03-12"
+ },
+ "brunel components ltd": {
+  "city": "Antwerp",
+  "contact_name": "Tomas Vermeer",
+  "email": "accounts@brunel.example",
+  "name": "Brunel Components Ltd",
+  "phone": "+31 63 915 4787",
+  "source": "buyer records",
+  "verified_on": "2026-03-15"
+ },
+ "brunel handel gmbh": {
+  "city": "Lyon",
+  "contact_name": "Pieter de Vries",
+  "email": "accounts@brunel.example",
+  "name": "Brunel Handel GmbH",
+  "phone": "+31 39 218 2881",
+  "source": "buyer records",
+  "verified_on": "2026-02-15"
+ },
+ "castellane handel gmbh": {
+  "city": "Lyon",
+  "contact_name": "Pieter de Vries",
+  "email": "accounts@castellane.example",
+  "name": "Castellane Handel GmbH",
+  "phone": "+31 52 287 8331",
+  "source": "buyer records",
+  "verified_on": "2026-02-23"
+ },
+ "castellane logistics bv": {
+  "city": "Bremen",
+  "contact_name": "Anja Bakker",
+  "email": "accounts@castellane.example",
+  "name": "Castellane Logistics BV",
+  "phone": "+31 75 753 1793",
+  "source": "buyer records",
+  "verified_on": "2026-01-26"
+ },
+ "castellane packaging sa": {
+  "city": "Rotterdam",
+  "contact_name": "Anja Bakker",
+  "email": "accounts@castellane.example",
+  "name": "Castellane Packaging SA",
+  "phone": "+31 40 577 6952",
+  "source": "buyer records",
+  "verified_on": "2026-01-27"
+ },
+ "ferro packaging sa": {
+  "city": "Utrecht",
+  "contact_name": "Ines Roth",
+  "email": "accounts@ferro.example",
+  "name": "Ferro Packaging SA",
+  "phone": "+31 71 526 8581",
+  "source": "buyer records",
+  "verified_on": "2026-05-27"
+ },
+ "kestrel fasteners bv": {
+  "city": "Antwerp",
+  "contact_name": "Pieter de Vries",
+  "email": "accounts@kestrel.example",
+  "name": "Kestrel Fasteners BV",
+  "phone": "+31 45 460 9138",
+  "source": "buyer records",
+  "verified_on": "2026-03-23"
+ },
+ "kestrel handel gmbh": {
+  "city": "Milan",
+  "contact_name": "Anja Bakker",
+  "email": "accounts@kestrel.example",
+  "name": "Kestrel Handel GmbH",
+  "phone": "+31 73 464 5714",
+  "source": "buyer records",
+  "verified_on": "2026-07-23"
+ },
+ "kestrel logistics bv": {
+  "city": "Bremen",
+  "contact_name": "Ines Roth",
+  "email": "accounts@kestrel.example",
+  "name": "Kestrel Logistics BV",
+  "phone": "+31 27 423 1364",
+  "source": "buyer records",
+  "verified_on": "2026-06-17"
+ },
+ "kestrel materials ltd": {
+  "city": "Milan",
+  "contact_name": "Anja Bakker",
+  "email": "accounts@kestrel.example",
+  "name": "Kestrel Materials Ltd",
+  "phone": "+31 75 738 1944",
+  "source": "buyer records",
+  "verified_on": "2026-03-11"
+ },
+ "kestrel supply co.": {
+  "city": "Rotterdam",
+  "contact_name": "Anja Bakker",
+  "email": "accounts@kestrel.example",
+  "name": "Kestrel Supply Co.",
+  "phone": "+31 67 961 8666",
+  "source": "buyer records",
+  "verified_on": "2026-01-12"
+ },
+ "marchetti fasteners bv": {
+  "city": "Lyon",
+  "contact_name": "Anja Bakker",
+  "email": "accounts@marchetti.example",
+  "name": "Marchetti Fasteners BV",
+  "phone": "+31 37 810 5190",
+  "source": "buyer records",
+  "verified_on": "2026-02-19"
+ },
+ "meridian handel gmbh": {
+  "city": "Antwerp",
+  "contact_name": "Anja Bakker",
+  "email": "accounts@meridian.example",
+  "name": "Meridian Handel GmbH",
+  "phone": "+31 15 549 6075",
+  "source": "buyer records",
+  "verified_on": "2026-02-24"
+ },
+ "meridian logistics bv": {
+  "city": "Hamburg",
+  "contact_name": "Ines Roth",
+  "email": "accounts@meridian.example",
+  "name": "Meridian Logistics BV",
+  "phone": "+31 39 637 8676",
+  "source": "buyer records",
+  "verified_on": "2026-06-18"
+ },
+ "meridian packaging sa": {
+  "city": "Manchester",
+  "contact_name": "Pieter de Vries",
+  "email": "accounts@meridian.example",
+  "name": "Meridian Packaging SA",
+  "phone": "+31 45 162 5641",
+  "source": "buyer records",
+  "verified_on": "2026-01-21"
+ },
+ "northgate components ltd": {
+  "city": "Bremen",
+  "contact_name": "Anja Bakker",
+  "email": "accounts@northgate.example",
+  "name": "Northgate Components Ltd",
+  "phone": "+31 75 322 4478",
+  "source": "buyer records",
+  "verified_on": "2026-07-22"
+ },
+ "northgate packaging sa": {
+  "city": "Hamburg",
+  "contact_name": "Ines Roth",
+  "email": "accounts@northgate.example",
+  "name": "Northgate Packaging SA",
+  "phone": "+31 65 129 1125",
+  "source": "buyer records",
+  "verified_on": "2026-02-26"
+ },
+ "ostwald components ltd": {
+  "city": "Manchester",
+  "contact_name": "Tomas Vermeer",
+  "email": "accounts@ostwald.example",
+  "name": "Ostwald Components Ltd",
+  "phone": "+31 50 663 6855",
+  "source": "buyer records",
+  "verified_on": "2026-06-20"
+ },
+ "ostwald industrieteknik gmbh": {
+  "city": "Milan",
+  "contact_name": "Anja Bakker",
+  "email": "accounts@ostwald.example",
+  "name": "Ostwald Industrieteknik GmbH",
+  "phone": "+31 15 623 3118",
+  "source": "buyer records",
+  "verified_on": "2026-01-25"
+ },
+ "pentland logistics bv": {
+  "city": "Utrecht",
+  "contact_name": "Pieter de Vries",
+  "email": "accounts@pentland.example",
+  "name": "Pentland Logistics BV",
+  "phone": "+31 56 147 6905",
+  "source": "buyer records",
+  "verified_on": "2026-05-25"
+ },
+ "verhoeven fasteners bv": {
+  "city": "Utrecht",
+  "contact_name": "Anja Bakker",
+  "email": "accounts@verhoeven.example",
+  "name": "Verhoeven Fasteners BV",
+  "phone": "+31 34 545 7309",
+  "source": "buyer records",
+  "verified_on": "2026-05-18"
+ },
+ "verhoeven logistics bv": {
+  "city": "Hamburg",
+  "contact_name": "Marta Lindqvist",
+  "email": "accounts@verhoeven.example",
+  "name": "Verhoeven Logistics BV",
+  "phone": "+31 35 734 7066",
+  "source": "buyer records",
+  "verified_on": "2026-06-28"
+ },
+ "verhoeven materials ltd": {
+  "city": "Hamburg",
+  "contact_name": "Anja Bakker",
+  "email": "accounts@verhoeven.example",
+  "name": "Verhoeven Materials Ltd",
+  "phone": "+31 34 466 6009",
+  "source": "buyer records",
+  "verified_on": "2026-04-24"
+ },
+ "verhoeven supply co.": {
+  "city": "Utrecht",
+  "contact_name": "Anja Bakker",
+  "email": "accounts@verhoeven.example",
+  "name": "Verhoeven Supply Co.",
+  "phone": "+31 34 462 2728",
+  "source": "buyer records",
+  "verified_on": "2026-07-12"
+ }
+}

@@ -86,6 +86,34 @@ def _api_key() -> str:
     return key
 
 
+def _client():
+    """The model backend. Vertex when asked for, the Gemini API otherwise.
+
+    Vertex is not a preference, it is the only way to run the core experiment. The
+    Gemini free tier is 20 requests per DAY per model (FINDINGS §4) and one adjudication
+    pass over the constructed corpus needs ~54 -- so on the free tier the measurement
+    that the whole architecture argument rests on cannot be taken at all.
+
+    Vertex authenticates with Application Default Credentials, so `PRAETOR_GEMINI=vertex`
+    runs with no `GOOGLE_API_KEY` present anywhere. That is deliberate: the key belongs
+    to a project we keep billing-disabled, and nothing here should be able to quietly
+    fall back onto it.
+
+    The import stays inside the function. `praetor/` must import on the standard library
+    alone, or the security claims stop being checkable with only pytest installed.
+    """
+    from google import genai
+
+    if os.environ.get("PRAETOR_GEMINI", "").strip().lower() != "vertex":
+        return genai.Client(api_key=_api_key())
+
+    project = os.environ.get("GOOGLE_CLOUD_PROJECT", "").strip()
+    if not project:
+        raise SystemExit("PRAETOR_GEMINI=vertex needs GOOGLE_CLOUD_PROJECT")
+    location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1").strip()
+    return genai.Client(vertexai=True, project=project, location=location)
+
+
 def _parse(raw: str) -> dict[str, str | None]:
     """Pull the JSON object out of the reply, tolerating code fences."""
     m = re.search(r"\{.*\}", raw, re.S)
@@ -102,8 +130,7 @@ def _parse(raw: str) -> dict[str, str | None]:
 def read(spans: dict[str, str], client=None, models=MODEL_CHAIN) -> ReaderResult:
     """Ask the model which span holds each field. Returns span IDs, never values."""
     if client is None:
-        from google import genai
-        client = genai.Client(api_key=_api_key())
+        client = _client()
 
     listing = "\n".join(f"{sid}\t{text}" for sid, text in spans.items())
     prompt = PROMPT.format(fields=", ".join(WANTED_FIELDS), spans=listing)

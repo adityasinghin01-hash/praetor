@@ -12,3 +12,4 @@ data/*.zip
 # local run artefacts
 out/
 *.log
+.playwright-mcp/

@@ -36,6 +36,7 @@ try:  # pragma: no cover - depends on whether the SDK is installed
 except ImportError:  # pragma: no cover
     AVAILABLE = False
 
+from praetor import store
 from praetor.store import ROLES, AlreadyApproved, NotEscalated
 
 # One collection per entity, each document keyed by "<tenant>:<doc_id>" so a scan is
@@ -43,6 +44,7 @@ from praetor.store import ROLES, AlreadyApproved, NotEscalated
 DOCS, FINDINGS, ADJ, APPROVALS, TENANTS, USERS, MEMBERS, POS, SESSIONS = (
     "documents", "findings", "adjudications", "approvals",
     "tenants", "users", "memberships", "purchase_orders", "sessions")
+TRUSTED = "trusted_accounts"
 
 
 def now() -> str:
@@ -168,7 +170,53 @@ def record_approval(db, tenant_id, doc_id, approved_by, codes) -> dict:
         tx.set(ref, record)
 
     _write(db.transaction())
+    _establish_trust(db, tenant_id, doc_id, record["approved_by"])
     return record
+
+
+def _establish_trust(db, tenant_id: str, doc_id: str, approved_by: str) -> str | None:
+    """Approval establishes trust here too. Same policy, different backend.
+
+    Kept byte-for-byte equivalent in behaviour to store._establish_trust: if the two
+    backends disagreed about what is trusted, the guarantee would depend on which one
+    happened to be configured. tests/test_firestore_store.py pins them together.
+    """
+    doc = document(db, tenant_id, doc_id)
+    if not doc or not doc.get("vendor_key"):
+        return None
+
+    acct = ""
+    for f in findings_for(db, tenant_id, doc_id):
+        if f.get("field") == "bank_account" and f.get("value"):
+            acct = store.norm_account(f["value"])
+            break
+    if not acct:
+        return None
+
+    ref = db.collection(TRUSTED).document(f"{tenant_id}:{doc['vendor_key']}:{acct}")
+    if ref.get().exists:
+        return None
+    ref.set({"tenant_id": tenant_id, "vendor_key": doc["vendor_key"],
+             "bank_account": acct, "first_doc_id": doc_id,
+             "approved_by": approved_by, "at": now()})
+    return acct
+
+
+def trusted_accounts(db, tenant_id: str, vendor_key: str) -> set[str]:
+    """Accounts a human approved paying this vendor. The production trust boundary."""
+    q = (db.collection(TRUSTED)
+         .where(filter=firestore.FieldFilter("tenant_id", "==", tenant_id))
+         .where(filter=firestore.FieldFilter("vendor_key", "==", vendor_key)))
+    return {d.to_dict()["bank_account"] for d in q.stream()}
+
+
+def trust_log(db, tenant_id: str | None = None) -> list[dict]:
+    """Every trust decision, and who made it."""
+    q = db.collection(TRUSTED)
+    if tenant_id:
+        q = q.where(filter=firestore.FieldFilter("tenant_id", "==", tenant_id))
+    return sorted((d.to_dict() for d in q.stream()),
+                  key=lambda r: r["at"], reverse=True)
 
 
 # ---------------------------------------------------------------- reads

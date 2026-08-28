@@ -34,17 +34,117 @@ KINDS = ["Supply Co.", "Logistics BV", "Industrieteknik GmbH", "Components Ltd",
          "Packaging SA", "Fasteners BV", "Materials Ltd", "Handel GmbH"]
 
 # Where each field sits on the page, as relative bbox [l, t, r, b].
-LAYOUT = {
-    "vendor_name":     [0.08, 0.08, 0.52, 0.11],
-    "vendor_address":  [0.08, 0.12, 0.55, 0.15],
-    "invoice_number":  [0.62, 0.08, 0.92, 0.11],
-    "invoice_date":    [0.62, 0.12, 0.92, 0.15],
-    "bank_account":    [0.08, 0.78, 0.52, 0.81],
-    "tax_rate":        [0.62, 0.70, 0.92, 0.73],
-    "currency":        [0.62, 0.74, 0.92, 0.77],
-    "amount_total":    [0.62, 0.82, 0.92, 0.86],
-    "note":            [0.08, 0.62, 0.92, 0.66],
+#
+# There are several templates on purpose, and this matters more than it looks.
+#
+# Until 27 Aug this file emitted exactly ONE layout: every field in all 350 invoices sat
+# at an identical bbox, and `payment_iban` was always [0.08, 0.78, 0.52, 0.81]. That is
+# harmless for scoring a rule that compares a field to a vendor's history -- position is
+# never consulted -- and fatal for anything that reasons about position, because a model
+# trained on it learns this generator's template rather than a property of invoices.
+#
+# A corpus with one layout flatters any position-aware component to ~100% and proves
+# nothing. Real invoices differ per supplier, so the corpus has to as well.
+#
+# Each vendor is assigned one template and keeps it, which is how real suppliers behave:
+# their invoices look the same as each other and different from everyone else's. Per
+# document jitter is applied on top, so no two bboxes are exactly equal even within a
+# template.
+LAYOUTS: dict[str, dict[str, list[float]]] = {
+    # Payment details bottom-left, totals stacked bottom-right.
+    "classic": {
+        "vendor_name":     [0.08, 0.08, 0.52, 0.11],
+        "vendor_address":  [0.08, 0.12, 0.55, 0.15],
+        "invoice_number":  [0.62, 0.08, 0.92, 0.11],
+        "invoice_date":    [0.62, 0.12, 0.92, 0.15],
+        "bank_account":    [0.08, 0.78, 0.52, 0.81],
+        "tax_rate":        [0.62, 0.70, 0.92, 0.73],
+        "currency":        [0.62, 0.74, 0.92, 0.77],
+        "amount_total":    [0.62, 0.82, 0.92, 0.86],
+        "note":            [0.08, 0.62, 0.92, 0.66],
+    },
+    # Remittance block high on the right; totals bottom-left. Mirrors "classic".
+    "remit_right": {
+        "vendor_name":     [0.08, 0.10, 0.50, 0.13],
+        "vendor_address":  [0.08, 0.14, 0.52, 0.17],
+        "invoice_number":  [0.08, 0.20, 0.38, 0.23],
+        "invoice_date":    [0.40, 0.20, 0.62, 0.23],
+        "bank_account":    [0.58, 0.28, 0.94, 0.31],
+        "tax_rate":        [0.10, 0.80, 0.34, 0.83],
+        "currency":        [0.36, 0.80, 0.52, 0.83],
+        "amount_total":    [0.10, 0.85, 0.44, 0.89],
+        "note":            [0.08, 0.68, 0.92, 0.73],
+    },
+    # Header band, body, footer band. Payment sits in the footer with the totals.
+    "banded": {
+        "vendor_name":     [0.06, 0.04, 0.60, 0.08],
+        "vendor_address":  [0.06, 0.085, 0.60, 0.115],
+        "invoice_number":  [0.66, 0.04, 0.94, 0.07],
+        "invoice_date":    [0.66, 0.075, 0.94, 0.105],
+        "bank_account":    [0.06, 0.86, 0.46, 0.895],
+        "tax_rate":        [0.50, 0.86, 0.70, 0.89],
+        "currency":        [0.72, 0.86, 0.86, 0.89],
+        "amount_total":    [0.50, 0.905, 0.94, 0.945],
+        "note":            [0.06, 0.74, 0.94, 0.79],
+    },
+    # Dense two-column. Everything sits higher and tighter.
+    "compact": {
+        "vendor_name":     [0.05, 0.05, 0.44, 0.075],
+        "vendor_address":  [0.05, 0.08, 0.44, 0.105],
+        "invoice_number":  [0.50, 0.05, 0.74, 0.075],
+        "invoice_date":    [0.76, 0.05, 0.95, 0.075],
+        "bank_account":    [0.50, 0.52, 0.95, 0.55],
+        "tax_rate":        [0.05, 0.52, 0.20, 0.545],
+        "currency":        [0.22, 0.52, 0.34, 0.545],
+        "amount_total":    [0.05, 0.56, 0.36, 0.60],
+        "note":            [0.05, 0.40, 0.95, 0.46],
+    },
+    # Centred letterhead, wide single column.
+    "letterhead": {
+        "vendor_name":     [0.28, 0.06, 0.72, 0.10],
+        "vendor_address":  [0.24, 0.105, 0.76, 0.135],
+        "invoice_number":  [0.24, 0.18, 0.50, 0.21],
+        "invoice_date":    [0.52, 0.18, 0.76, 0.21],
+        "bank_account":    [0.24, 0.70, 0.76, 0.735],
+        "tax_rate":        [0.24, 0.60, 0.44, 0.63],
+        "currency":        [0.46, 0.60, 0.60, 0.63],
+        "amount_total":    [0.52, 0.755, 0.86, 0.80],
+        "note":            [0.14, 0.44, 0.86, 0.50],
+    },
 }
+LAYOUT_NAMES = sorted(LAYOUTS)
+
+# Where an attacker-controlled span lands, per template. An injected note is written by
+# someone who can see the invoice, so it goes somewhere plausible for that layout rather
+# than always at the same coordinates.
+INJECT_BBOX: dict[str, list[float]] = {
+    "classic":    [0.08, 0.88, 0.92, 0.94],
+    "remit_right": [0.08, 0.34, 0.92, 0.40],
+    "banded":     [0.06, 0.66, 0.94, 0.72],
+    "compact":    [0.05, 0.64, 0.95, 0.70],
+    "letterhead": [0.14, 0.82, 0.86, 0.88],
+}
+
+JITTER = 0.006   # +/- this much on every coordinate, per document
+
+
+def jittered(bbox: list[float], rng: random.Random) -> list[float]:
+    """Nudge a bbox so no two documents share exact coordinates.
+
+    Kept small enough that the field stays visually where the template puts it, and
+    large enough that an exact-coordinate lookup cannot be used as a shortcut.
+    """
+    out = []
+    for i, c in enumerate(bbox):
+        c += rng.uniform(-JITTER, JITTER)
+        out.append(round(min(max(c, 0.0), 1.0), 4))
+    # Keep the box well formed after jitter.
+    l, t, r, b = out
+    if r <= l:
+        r = min(l + 0.02, 1.0)
+    if b <= t:
+        b = min(t + 0.015, 1.0)
+    return [l, t, r, b]
 FIELDTYPE = {  # our attr -> DocILE-style fieldtype (praetor.docile_adapter.FIELD_MAP)
     "vendor_name": "vendor_name",
     "vendor_address": "vendor_address",
@@ -193,14 +293,30 @@ def build(vendor: dict, seq: int, rng: random.Random,
     return f, truth
 
 
-def to_annotation(fields: dict, injected: str | None) -> dict:
+def to_annotation(fields: dict, injected: str | None, layout: str,
+                  jitter_rng: random.Random) -> dict:
+    """One document's spans, placed by its vendor's template and jittered per document.
+
+    `layout` is recorded so results can be sliced by template, and so a position-aware
+    component can be held out by layout rather than only by document -- which is the
+    only way to show it generalises rather than memorises.
+
+    `jitter_rng` is a SEPARATE stream from the one that decides content, and the
+    separation is load-bearing. Jitter draws four uniforms per field; taking them from
+    the shared stream shifted every later deviation roll, so adding layout variation on
+    27 Aug silently re-planted the corpus -- 54 deviations became 57, at different
+    documents. No rule reads a coordinate, so the F1 that came back (0.874 -> 0.908)
+    was a different random draw wearing the old number's clothes, not an improvement.
+    Where a field sits must not be able to change what the document says.
+    """
+    template = LAYOUTS[layout]
     out = []
     for attr, value in fields.items():
         out.append({
             "fieldtype": FIELDTYPE[attr],
             "text": str(value),
             "page": 0,
-            "bbox": LAYOUT.get(attr, [0.0, 0.0, 0.1, 0.02]),
+            "bbox": jittered(template.get(attr, [0.0, 0.0, 0.1, 0.02]), jitter_rng),
             "line_item_id": None,
         })
     if injected:
@@ -211,10 +327,11 @@ def to_annotation(fields: dict, injected: str | None) -> dict:
             "fieldtype": "other",
             "text": injected,
             "page": 0,
-            "bbox": [0.08, 0.88, 0.92, 0.94],
+            "bbox": jittered(INJECT_BBOX[layout], jitter_rng),
             "line_item_id": None,
         })
-    return {"field_extractions": out, "source": "constructed", "synthetic": True}
+    return {"field_extractions": out, "source": "constructed", "synthetic": True,
+            "layout": layout}
 
 
 def main() -> None:
@@ -247,6 +364,10 @@ def main() -> None:
         payloads = []
 
     vendors = make_vendors(args.vendors, rng)
+    # A supplier's invoices look like each other and unlike everyone else's, so the
+    # template is a property of the vendor rather than of the document.
+    for i, v in enumerate(vendors):
+        v["layout"] = LAYOUT_NAMES[i % len(LAYOUT_NAMES)]
     truth_rows, n_dev, n_inj = [], 0, 0
     # Purchase orders the buyer issued. Collected from the notes WE write, never from
     # the finished annotation — an injected payload is added at annotation time, so a
@@ -284,8 +405,14 @@ def main() -> None:
                         "currency": fields.get("currency"),
                     }
             doc_id = f"{v['key']}_{seq:03d}"
-            (out / f"{doc_id}.json").write_text(json.dumps(to_annotation(fields, injected)))
+            # Jitter gets its own stream, seeded from the doc id: reproducible, and
+            # unable to reach the content stream above no matter how many draws it
+            # takes. Adding a sixth layout must not re-plant the corpus.
+            annotation = to_annotation(fields, injected, v["layout"],
+                                       random.Random(f"{args.seed}:{doc_id}"))
+            (out / f"{doc_id}.json").write_text(json.dumps(annotation))
             truth_rows.append({"doc_id": doc_id, "vendor_key": v["key"],
+                               "layout": v["layout"],
                                "injected": bool(injected), **truth})
 
     truth_path = out.parent / "constructed_truth.jsonl"
@@ -302,6 +429,28 @@ def main() -> None:
         "purchase_orders": [issued_pos[k] for k in sorted(issued_pos)],
     }, indent=1) + "\n")
 
+    # The buyer's own contact register. Written from the vendor list this script
+    # invented, never from a finished document -- an invoice that prints a phone number
+    # must not be able to become the number an analyst rings to check that invoice.
+    # See praetor/suppliers.py. Its own RNG, for the reason in to_annotation().
+    contacts_path = out.parent / "supplier_contacts.json"
+    contacts = {}
+    for v in vendors:
+        crng = random.Random(f"{args.seed}:contact:{v['key']}")
+        city = v["address"].rsplit(", ", 1)[-1]
+        contacts[v["name"].lower()] = {
+            "name": v["name"],
+            "phone": f"+31 {crng.randint(10, 79)} {crng.randint(100, 999)} "
+                     f"{crng.randint(1000, 9999)}",
+            "email": f"accounts@{v['name'].split()[0].lower()}.example",
+            "contact_name": crng.choice(["Anja Bakker", "Tomas Vermeer", "Ines Roth",
+                                         "Pieter de Vries", "Marta Lindqvist"]),
+            "source": "buyer records",
+            "verified_on": f"2026-0{crng.randint(1, 7)}-{crng.randint(10, 28)}",
+            "city": city,
+        }
+    contacts_path.write_text(json.dumps(contacts, indent=1, sort_keys=True) + "\n")
+
     total = len(truth_rows)
     print(f"wrote {total} constructed invoices to {out}")
     print(f"  vendors:            {args.vendors} x {args.per_vendor}")
@@ -313,6 +462,12 @@ def main() -> None:
     print(f"    correct action = resolve : {n_res}")
     print(f"    correct action = escalate: {n_esc}")
     print(f"  with an injection:  {n_inj}  ({n_inj / total * 100:.1f}%)")
+    from collections import Counter
+    by_layout = Counter(r["layout"] for r in truth_rows)
+    print(f"  layouts:            {len(by_layout)} templates, "
+          f"jittered +/-{JITTER} per document")
+    for name in sorted(by_layout):
+        print(f"    {name:14} {by_layout[name]:4} documents")
     print(f"  ground truth ->     {truth_path}")
     print(f"  PO register ->      {register_path}  ({len(issued_pos)} orders)")
     print("\nALL SYNTHETIC. Label it as such in every reported number.")

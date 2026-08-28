@@ -46,6 +46,39 @@ from praetor.docile_adapter import load_annotation  # noqa: E402
 from praetor.gate import Action, GateDecision, approve  # noqa: E402
 from praetor.types import Finding  # noqa: E402
 
+from dashboard import api, build, ratelimit  # noqa: E402
+
+# One limiter per process. The expensive public endpoint is the one that
+# runs the pipeline and writes to disk; the read-only ones are cheap but
+# still worth bounding, so they share a looser limiter.
+RUN_LIMIT = ratelimit.RateLimiter(limit=20, window=60.0, global_limit=120)
+# Sign-in is the one place a stranger can guess at something valuable. PBKDF2 makes each
+# guess expensive for us as well as for them, so an unmetered login form is both a
+# brute-force surface and a way to burn our CPU.
+LOGIN_LIMIT = ratelimit.RateLimiter(limit=10, window=300.0, global_limit=60)
+
+# Headers every response carries.
+#
+# `frame-ancestors 'none'` and X-Frame-Options are not boilerplate here: this app has an
+# Approve button that moves money, and clickjacking it is a real attack rather than a
+# theoretical one.
+#
+# The CSP allows inline script and style, which is weaker than it should be, because the
+# app is a single self-contained file. Every value rendered goes through textContent, so
+# there is no HTML-injection path today -- but this is a known compromise, not a
+# considered win, and it goes away when the pages are split into real assets.
+SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "Content-Security-Policy": (
+        "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+        "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; "
+        "form-action 'self'"),
+}
+READ_LIMIT = ratelimit.RateLimiter(limit=120, window=60.0, global_limit=600)
+
 INDEX = ROOT / "dashboard" / "index.html"
 COOKIE = "praetor_session"
 
@@ -87,13 +120,28 @@ are, so identity is proven here rather than asserted.</p>
   <button type="submit">Sign in</button>
 </form>
 {error}
-<div class="seed">
+{seed}
+</div>
+"""
+
+# DECISIONS.md #11 prints the demo password on the sign-in page on purpose: a judge who
+# clones the repo has no other way in, and that is worth more than the secrecy of a
+# password to a throwaway database of synthetic invoices.
+#
+# It is worth more *locally*. On a public URL it is just a credential printed next to the
+# form it opens, which is indefensible however synthetic the data is. Cloud Run sets
+# K_SERVICE, so the block appears when someone runs the repo and disappears when it is
+# deployed -- the ADR's intent kept, without the part that only made sense offline.
+SEED_BLOCK = """<div class="seed">
   Seeded demo accounts &mdash; password <code>{pw}</code><br>
   <code>reviewer@acme-industries.test</code> &middot; approver<br>
   <code>auditor@acme-industries.test</code> &middot; viewer, cannot approve
-</div>
-</div>
-"""
+</div>"""
+
+
+def deployed() -> bool:
+    """True when running on Cloud Run rather than on someone's machine."""
+    return bool(os.environ.get("K_SERVICE"))
 
 
 # Cloud Run gives the container a read-only filesystem in places and charges for CPU
@@ -130,17 +178,46 @@ def db():
 class Handler(BaseHTTPRequestHandler):
     # ------------------------------------------------------------- plumbing
 
-    def _send(self, code, body: bytes, ctype: str, cookie: str | None = None) -> None:
+    def _send(self, code, body: bytes, ctype: str, cookie: str | None = None,
+              cache: str | None = None) -> None:
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
+        for k, v in SECURITY_HEADERS.items():
+            self.send_header(k, v)
+        if self.headers.get("X-Forwarded-Proto", "").lower() == "https":
+            self.send_header("Strict-Transport-Security", "max-age=31536000")
         if cookie:
             self.send_header("Set-Cookie", cookie)
+        if cache:
+            self.send_header("Cache-Control", cache)
         self.end_headers()
         self.wfile.write(body)
 
+    def _too_many(self, retry_after: int) -> None:
+        """Plain language, and a Retry-After a client can actually obey."""
+        body = json.dumps({
+            "error": "Too many attempts from here. Wait a moment and try again.",
+            "retry_after_seconds": retry_after,
+        }).encode()
+        self.send_response(429)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Retry-After", str(retry_after))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _allowed(self, limiter) -> bool:
+        key = ratelimit.caller_key(self.headers, self.client_address)
+        ok, retry = limiter.check(key)
+        if not ok:
+            self._too_many(retry)
+        return ok
+
     def _json(self, code: int, obj: dict) -> None:
-        self._send(code, json.dumps(obj).encode(), "application/json")
+        self._send(code, json.dumps(obj).encode(), "application/json",
+                   cache="no-store")
 
     def _redirect(self, to: str, cookie: str | None = None) -> None:
         self.send_response(303)
@@ -159,10 +236,13 @@ class Handler(BaseHTTPRequestHandler):
         return jar[COOKIE].value if COOKIE in jar else None
 
     def _login_page(self, code=200, error="", email="") -> None:
-        from eval.build_db import DEMO_PASSWORD
+        seed = ""
+        if not deployed():
+            from eval.build_db import DEMO_PASSWORD
+            seed = SEED_BLOCK.format(pw=html.escape(DEMO_PASSWORD))
         body = LOGIN_PAGE.format(
             error=f'<div class="err">{html.escape(error)}</div>' if error else "",
-            email=html.escape(email), pw=DEMO_PASSWORD)
+            email=html.escape(email), seed=seed)
         self._send(code, body.encode(), "text/html; charset=utf-8")
 
     def _body(self) -> dict:
@@ -178,9 +258,97 @@ class Handler(BaseHTTPRequestHandler):
 
     # ------------------------------------------------------------------ GET
 
+    # ------------------------------------------------------------------ the JSON API
+    #
+    # The pages hold no data. They fetch from here, and here reads the pipeline's own
+    # output on every request. A page with data baked into it has gone stale twice in
+    # this project (FINDINGS §5, and again on 27 Aug); this is the fix that makes it
+    # structurally impossible rather than something to remember.
+
+    def _rows(self, conn, tenant: str):
+        """Queue rows from the database when there is one, from files otherwise, so
+        `make demo` works with no database at all."""
+        if store.DB_PATH.exists() or firestore_backend():
+            rows, _ = build.rows_from_db(tenant)
+        else:
+            rows, _ = build.rows_from_files()
+        return rows
+
+    def _api_get(self, conn, path: str, q: dict) -> None:
+        # Tab 3 is deliberately open: it is the "try to break it" page, it touches only
+        # the synthetic corpus, and requiring a login to attack a demo defeats its point.
+        if path.startswith("/v1/gauntlet/") and not self._allowed(READ_LIMIT):
+            return None
+        if path == "/v1/gauntlet/documents":
+            return self._json(200, api.gauntlet_documents())
+        if path == "/v1/gauntlet/examples":
+            return self._json(200, api.gauntlet_examples())
+        if path == "/v1/gauntlet/document":
+            try:
+                return self._json(200, api.gauntlet_document((q.get("id") or [""])[0]))
+            except KeyError:
+                return self._json(404, {"error": "no such invoice"})
+
+        # Everything below is a client's own data and needs a session.
+        user = auth.session_user(conn, self._token())
+        if not user:
+            return self._json(401, {"error": "not signed in"})
+        tenant = (q.get("tenant") or [store.DEFAULT_TENANT])[0]
+        if db().role_of(conn, user, tenant) is None:
+            return self._json(403, {"error": "not a member of this client"})
+
+        if path == "/v1/queue":
+            return self._json(200, api.queue(self._rows(conn, tenant)))
+        if path == "/v1/stopped":
+            return self._json(200, api.stopped(self._rows(conn, tenant)))
+        if path == "/v1/notes":
+            doc_id = (q.get("doc_id") or [""])[0]
+            return self._json(200, {"notes": store.notes_for(conn, tenant, doc_id)})
+        return self._json(404, {"error": "not found"})
+
+    def _api_post(self, conn, path: str, body: dict) -> None:
+        if path == "/v1/gauntlet/run":
+            # The only anonymous endpoint that does real work and writes to disk.
+            if not self._allowed(RUN_LIMIT):
+                return None
+            try:
+                return self._json(200, api.gauntlet_run(
+                    str(body.get("doc_id", "")), str(body.get("text", ""))))
+            except KeyError:
+                return self._json(404, {"error": "no such invoice"})
+
+        user = auth.session_user(conn, self._token())
+        if not user:
+            return self._json(401, {"error": "not signed in"})
+        tenant = str(body.get("tenant") or store.DEFAULT_TENANT)
+        if db().role_of(conn, user, tenant) is None:
+            return self._json(403, {"error": "not a member of this client"})
+
+        if path == "/v1/notes":
+            # The author is the session, never the body. Same rule as approval:
+            # a self-declared identity is not an identity. See DECISIONS.md #11.
+            try:
+                return self._json(200, store.add_note(
+                    conn, tenant, str(body.get("doc_id", "")), user,
+                    str(body.get("body", "")), str(body.get("kind", "note"))))
+            except ValueError as e:
+                return self._json(422, {"error": str(e)})
+        return self._json(404, {"error": "not found"})
+
     def do_GET(self) -> None:  # noqa: N802
         path = urlparse(self.path).path
         conn = db().connect()
+
+        if path.startswith("/v1/"):
+            return self._api_get(conn, path, parse_qs(urlparse(self.path).query))
+        if path == "/app":
+            # Read from disk every time and tell the browser never to cache it. A
+            # cached page showing yesterday's queue is the same defect class as a
+            # committed page showing yesterday's corpus, and it is worse here because
+            # the person looking at it has no way to tell.
+            page = (Path(__file__).resolve().parent / "app.html").read_bytes()
+            return self._send(200, page, "text/html; charset=utf-8",
+                              cache="no-store, must-revalidate")
 
         if path == "/login":
             return self._login_page()
@@ -273,7 +441,12 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         conn = db().connect()
 
+        if path.startswith("/v1/"):
+            return self._api_post(conn, path, self._body())
+
         if path == "/login":
+            if not self._allowed(LOGIN_LIMIT):
+                return None
             body = self._body()
             email = str(body.get("email", "")).strip()
             user = auth.authenticate(conn, email, str(body.get("password", "")))
@@ -337,6 +510,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(409, {"error": str(e)})
 
         return self._json(200, record)
+
+    def version_string(self) -> str:
+        """Do not advertise the interpreter version to everyone who asks."""
+        return "PRAETOR"
 
     def log_message(self, fmt, *args):
         sys.stderr.write(f"  {self.command} {urlparse(self.path).path}\n")

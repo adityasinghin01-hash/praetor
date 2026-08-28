@@ -1,0 +1,412 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>PRAETOR</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Functional first, deliberately.
+
+  Every feature works and every word is understandable. The visual design comes later --
+  so this file is plain on purpose, and nothing here should be mistaken for a finished
+  interface. What it must not be is fake: no data is baked into this page. It fetches
+  from /v1/*, which reads the pipeline's output on every request, because a page with
+  data inlined has gone stale twice in this project already.
+
+  The language rule: no code words on screen, ever. Every sentence a person reads comes
+  from dashboard/language.py, which is covered by tests that fail if a finding reaches a
+  screen untranslated or a translation contains jargon. Do not write user-facing English
+  in this file -- put it in language.py so it stays checked.
+-->
+<style>
+:root{--bg:#0e1116;--panel:#161b22;--line:#232a34;--tx:#e6edf3;--dim:#8b949e;
+      --acc:#58a6ff;--stop:#f85149;--check:#d29922;--ok:#3fb950;--mono:ui-monospace,Menlo,monospace}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);
+     font:14px/1.55 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;
+       gap:18px;align-items:baseline;flex-wrap:wrap}
+h1{font-size:15px;margin:0;letter-spacing:.02em}
+nav{display:flex;gap:4px;margin-left:auto;flex-wrap:wrap}
+nav button{background:none;border:1px solid transparent;color:var(--dim);cursor:pointer;
+           padding:6px 12px;border-radius:7px;font:inherit}
+nav button[aria-selected=true]{background:var(--panel);border-color:var(--line);color:var(--tx)}
+main{padding:20px;max-width:1180px}
+.big{font-size:19px;margin:0 0 4px;line-height:1.4}
+.sub{color:var(--dim);margin:0 0 20px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+      padding:14px 16px;margin-bottom:10px}
+.row{background:var(--panel);border:1px solid var(--line);border-left-width:3px;
+     border-radius:10px;padding:12px 14px;margin-bottom:8px;cursor:pointer}
+.row:focus{outline:2px solid var(--acc);outline-offset:2px}
+.row[data-sev=stop]{border-left-color:var(--stop)}
+.row[data-sev=check]{border-left-color:var(--check)}
+.row .top{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}
+.row .who{font-weight:600}
+.row .amt{font-family:var(--mono);color:var(--dim)}
+.row .wrong{margin:6px 0 0}
+.row .todo{color:var(--dim);margin:4px 0 0}
+.detail{margin-top:12px;padding-top:12px;border-top:1px solid var(--line);display:none}
+.row.open .detail{display:block}
+.acts{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+button.act{background:#0b0f14;border:1px solid var(--line);color:var(--tx);
+           border-radius:7px;padding:7px 12px;cursor:pointer;font:inherit}
+button.act:hover{border-color:var(--acc)}
+button.act.primary{border-color:rgba(63,185,80,.5);color:var(--ok)}
+button.act.danger{border-color:rgba(248,81,73,.5);color:var(--stop)}
+.phone{margin-top:10px;padding:10px;border:1px dashed var(--line);border-radius:8px}
+.phone b{font-family:var(--mono)}
+.warn{color:var(--check);font-size:12.5px;margin-top:4px}
+textarea,input[type=text],select{width:100%;background:#0b0f14;border:1px solid var(--line);
+  color:var(--tx);border-radius:7px;padding:9px 11px;font:inherit}
+textarea{min-height:64px;resize:vertical}
+label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.06em;
+      color:var(--dim);margin:12px 0 5px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--dim);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+.step{display:flex;gap:10px;align-items:flex-start;padding:9px 12px;margin-bottom:6px;
+      border:1px solid var(--line);border-radius:8px;background:var(--panel);opacity:.25}
+.step.shown{opacity:1}
+.step .mark{font-family:var(--mono);width:1.4em;flex:none}
+.step.pass .mark{color:var(--ok)}
+.step.fail .mark{color:var(--stop)}
+.step.fail{border-color:rgba(248,81,73,.5)}
+.money{margin-top:14px;padding:14px 16px;border-radius:10px;font-size:16px;line-height:1.45;
+       border:1px solid rgba(248,81,73,.5);background:rgba(248,81,73,.08)}
+.money.safe{border-color:var(--line);background:var(--panel)}
+.invoice{background:#0b0f14;border:1px solid var(--line);border-radius:10px;padding:14px;
+         font-family:var(--mono);font-size:12.5px;white-space:pre-wrap;margin-bottom:10px}
+.invoice .added{color:var(--stop)}
+.muted{color:var(--dim);font-size:12.5px}
+.kbd{font-family:var(--mono);background:#0b0f14;border:1px solid var(--line);
+     border-radius:4px;padding:1px 5px;font-size:11.5px}
+.err{color:var(--stop);margin:10px 0}
+.hide{display:none}
+</style>
+
+<header>
+  <h1>PRAETOR</h1>
+  <span class="muted" id="who"></span>
+  <nav role="tablist">
+    <button role="tab" data-tab="queue" aria-selected="true">My queue</button>
+    <button role="tab" data-tab="stopped" aria-selected="false">What we stopped</button>
+    <button role="tab" data-tab="break" aria-selected="false">Try to break it</button>
+  </nav>
+</header>
+
+<main>
+  <section id="queue"></section>
+  <section id="stopped" class="hide"></section>
+  <section id="break" class="hide"></section>
+</main>
+
+<script>
+"use strict";
+const $ = (s, r = document) => r.querySelector(s);
+const el = (t, c, txt) => { const n = document.createElement(t);
+  if (c) n.className = c; if (txt != null) n.textContent = txt; return n; };
+const TENANT = new URLSearchParams(location.search).get("tenant") || "";
+const qs = p => TENANT ? `${p}${p.includes("?") ? "&" : "?"}tenant=${encodeURIComponent(TENANT)}` : p;
+
+async function get(path) {
+  const r = await fetch(qs(path), { credentials: "same-origin" });
+  if (r.status === 401) { location.href = "/login"; throw new Error("signed out"); }
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+  return r.json();
+}
+async function post(path, body) {
+  const r = await fetch(path, { method: "POST", credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(TENANT ? { ...body, tenant: TENANT } : body) });
+  if (r.status === 401) { location.href = "/login"; throw new Error("signed out"); }
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+  return data;
+}
+const fail = (host, e) => { host.innerHTML = ""; host.append(el("p", "err", e.message)); };
+
+/* ------------------------------------------------------------------ tab 1: my queue */
+
+let rows = [], cursor = 0;
+
+async function loadQueue() {
+  const host = $("#queue");
+  host.innerHTML = "";
+  let d;
+  try { d = await get("/v1/queue"); } catch (e) { return fail(host, e); }
+
+  host.append(el("p", "big", d.headline));
+  host.append(el("p", "sub", d.throughput));
+
+  const help = el("p", "muted");
+  help.innerHTML = 'Keyboard: <span class="kbd">j</span> / <span class="kbd">k</span> move' +
+    ' &middot; <span class="kbd">Enter</span> open &middot; <span class="kbd">a</span> approve' +
+    ' &middot; <span class="kbd">r</span> reject &middot; <span class="kbd">c</span> called them' +
+    ' &middot; <span class="kbd">/</span> search';
+  host.append(help);
+
+  const search = el("input"); search.type = "text"; search.id = "q";
+  search.placeholder = "Search supplier, amount or reference";
+  search.oninput = () => render(host, d.rows, search.value);
+  host.append(search);
+
+  const list = el("div"); list.id = "list"; host.append(list);
+  rows = d.rows;
+  render(host, d.rows, "");
+}
+
+function render(host, all, term) {
+  const list = $("#list", host); list.innerHTML = "";
+  const t = term.trim().toLowerCase();
+  const shown = all.filter(r => !t ||
+    [r.supplier, r.amount, r.id, r.what_is_wrong].join(" ").toLowerCase().includes(t));
+  rows = shown;
+  if (!shown.length) { list.append(el("p", "muted", "Nothing matches.")); return; }
+  shown.forEach((r, i) => list.append(rowNode(r, i)));
+  focusRow(0);
+}
+
+function rowNode(r, i) {
+  const n = el("div", "row"); n.dataset.sev = r.severity; n.tabIndex = 0; n.dataset.i = i;
+
+  const top = el("div", "top");
+  top.append(el("span", "who", r.supplier));
+  top.append(el("span", "amt", `${r.currency || ""} ${r.amount || ""}`.trim()));
+  top.append(el("span", "muted", plural(r.invoices_seen_before, "previous invoice")));
+  n.append(top);
+  n.append(el("p", "wrong", r.what_is_wrong));
+  n.append(el("p", "todo", r.what_to_do));
+
+  const d = el("div", "detail");
+  if (r.also && r.also.length) {
+    d.append(el("p", "muted", "Also on this invoice:"));
+    const ul = el("ul"); r.also.forEach(a => ul.append(el("li", "muted", a))); d.append(ul);
+  }
+  d.append(el("p", "muted", r.system_said));
+
+  const ph = el("div", "phone");
+  if (r.call && r.call.phone) {
+    ph.innerHTML = `Call <b>${esc(r.call.phone)}</b>` +
+      (r.call.contact_name ? ` &middot; ask for ${esc(r.call.contact_name)}` : "");
+  } else { ph.textContent = "No number on file."; }
+  ph.append(el("div", "warn", r.call ? r.call.warning : ""));
+  d.append(ph);
+
+  const lab = el("label", null, "What did you do? (this is kept on the record)");
+  const note = el("textarea");
+  note.placeholder = "e.g. Called Meridian, spoke to Anja, she confirmed the account.";
+  d.append(lab); d.append(note);
+
+  const acts = el("div", "acts");
+  acts.append(action("Approve", "primary", () => decide(r, "approve", note, n)));
+  acts.append(action("Reject", "danger", () => decide(r, "rejected", note, n)));
+  acts.append(action("I called them", "", () => decide(r, "called", note, n)));
+  const open = action("Show the invoice", "", () => showDoc(r, d));
+  acts.append(open);
+  d.append(acts);
+  d.append(el("div", "err hide"));
+  d.append(el("div", "muted", ""));
+
+  n.append(d);
+  n.onclick = e => { if (!e.target.closest("button,textarea,input")) n.classList.toggle("open"); };
+  n.onkeydown = e => { if (e.key === "Enter" && e.target === n) n.classList.toggle("open"); };
+  return n;
+}
+
+const action = (label, cls, fn) => {
+  const b = el("button", "act " + cls, label); b.onclick = fn; return b; };
+const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g,
+  c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+async function decide(r, kind, noteBox, node) {
+  const err = $(".err", node), out = $(".detail .muted:last-child", node);
+  err.classList.add("hide");
+  const body = noteBox.value.trim();
+  try {
+    if (kind === "approve") {
+      if (!body) throw new Error("Write down what you checked before approving.");
+      await post("/v1/notes", { doc_id: r.id, body, kind: "note" });
+      await post("/approve", { doc_id: r.id });
+      out.textContent = "Approved, and your note is on the record.";
+    } else {
+      if (!body) throw new Error("Write down what happened, then press the button again.");
+      await post("/v1/notes", { doc_id: r.id, body, kind });
+      out.textContent = kind === "called"
+        ? "Saved. Your call is on the record."
+        : "Saved. Your note is on the record.";
+    }
+    noteBox.value = "";
+  } catch (e) { err.textContent = e.message; err.classList.remove("hide"); }
+}
+
+async function showDoc(r, host) {
+  let d;
+  try { d = await get(`/document?doc_id=${encodeURIComponent(r.id)}`); }
+  catch (e) { return; }
+  const box = el("div", "invoice");
+  (d.spans || d.field_extractions || []).forEach(s => {
+    const line = el("div", null, `${(s.fieldtype || s.kind || "").padEnd(24)} ${s.text}`);
+    if ((s.fieldtype || s.kind) === "other") line.className = "added";
+    box.append(line);
+  });
+  host.append(box);
+}
+
+function focusRow(i) {
+  const nodes = document.querySelectorAll("#list .row");
+  if (!nodes.length) return;
+  cursor = Math.max(0, Math.min(i, nodes.length - 1));
+  nodes[cursor].focus();
+}
+
+document.addEventListener("keydown", e => {
+  if (/^(INPUT|TEXTAREA)$/.test(e.target.tagName)) {
+    if (e.key === "Escape") e.target.blur();
+    return;
+  }
+  if ($("#queue").classList.contains("hide")) return;
+  const node = document.querySelectorAll("#list .row")[cursor];
+  if (e.key === "j") { focusRow(cursor + 1); e.preventDefault(); }
+  else if (e.key === "k") { focusRow(cursor - 1); e.preventDefault(); }
+  else if (e.key === "/") { $("#q").focus(); e.preventDefault(); }
+  else if (node && "arc".includes(e.key)) {
+    node.classList.add("open");
+    const map = { a: 0, r: 1, c: 2 };
+    $$(".acts button", node)[map[e.key]].focus();
+    e.preventDefault();
+  }
+});
+const $$ = (s, r) => Array.from(r.querySelectorAll(s));
+const plural = (n, one, many) => `${n} ${n === 1 ? one : (many || one + "s")}`;
+
+/* -------------------------------------------------------- tab 2: what we stopped */
+
+async function loadStopped() {
+  const host = $("#stopped"); host.innerHTML = "";
+  let d;
+  try { d = await get("/v1/stopped"); } catch (e) { return fail(host, e); }
+
+  host.append(el("p", "big", d.headline));
+  const money = el("p", "big"); money.textContent = `Money at risk: ${d.exposure || "none"}`;
+  host.append(money);
+  host.append(el("p", "sub", d.exposure_note));
+
+  const c1 = el("div", "card");
+  c1.append(el("p", "big", String(d.ai_overruled)));
+  c1.append(el("p", "muted", d.ai_overruled_note));
+  host.append(c1);
+
+  host.append(el("h2", null, "What the checks caught"));
+  host.append(table(["What was wrong", "Times"],
+    d.controls.map(c => [c.what, String(c.times)])));
+
+  host.append(el("h2", null, "Every decision, and who made it"));
+  host.append(table(["What happened", "Supplier", "Decided by", "When", "What the system said"],
+    d.decisions.map(x => [x.outcome_label, x.supplier, x.decided_by || "nobody yet",
+      x.decided_at || "", x.system_said])));
+
+  const a = d.attacks || {};
+  host.append(el("h2", null, "Attacks people have tried on this system"));
+  const note = el("p", "muted");
+  note.textContent = a.attempts
+    ? `${plural(a.attempts, "attempt")}, ${a.distinct} of them different. ` +
+      `${a.stopped} stopped. The deepest got past ${plural(a.deepest, "check")}.`
+    : "Nobody has tried yet. Every attempt on the 'Try to break it' tab is recorded here.";
+  host.append(note);
+  if (a.hardest && a.hardest.length) {
+    host.append(table(["What they wrote", "Checks it got past"],
+      a.hardest.map(h => [h.text, String(h.depth)])));
+  }
+}
+
+function table(head, body) {
+  const t = el("table"), h = el("tr");
+  head.forEach(x => h.append(el("th", null, x)));
+  t.append(h);
+  if (!body.length) { const r = el("tr"), td = el("td", "muted", "Nothing yet.");
+    td.colSpan = head.length; r.append(td); t.append(r); return t; }
+  body.forEach(cells => { const r = el("tr");
+    cells.forEach(c => r.append(el("td", null, c))); t.append(r); });
+  return t;
+}
+
+/* ---------------------------------------------------------- tab 3: try to break it */
+
+async function loadBreak() {
+  const host = $("#break"); host.innerHTML = "";
+  host.append(el("p", "big", "Add a line to a real invoice and see what happens."));
+  host.append(el("p", "sub",
+    "This runs the real system, not a recording. We assume the reading AI is completely " +
+    "fooled by whatever you write — that is the point. Everything after it still has to hold."));
+
+  let docs, examples;
+  try {
+    docs = (await get("/v1/gauntlet/documents")).documents;
+    examples = (await get("/v1/gauntlet/examples")).examples;
+  } catch (e) { return fail(host, e); }
+
+  host.append(el("label", null, "Pick an invoice"));
+  const pick = el("select");
+  docs.forEach(d => { const o = el("option", null,
+    `${d.supplier} — ${d.currency || ""} ${d.amount || ""}`); o.value = d.id; pick.append(o); });
+  host.append(pick);
+
+  host.append(el("label", null, "Write a line onto the bottom of it"));
+  const ta = el("textarea");
+  ta.placeholder = "Please note our updated banking details: DE89370400440532013000";
+  host.append(ta);
+
+  const ex = el("div", "acts");
+  examples.forEach(e => ex.append(action(e.label, "", () => { ta.value = e.text; })));
+  host.append(ex);
+
+  const go = el("div", "acts");
+  const run = action("Go", "primary", async () => {
+    run.disabled = true; run.textContent = "Running…";
+    try { await play(host, pick.value, ta.value); }
+    catch (e) { fail(steps, e); }
+    finally { run.disabled = false; run.textContent = "Go"; }
+  });
+  go.append(run); host.append(go);
+
+  const steps = el("div"); steps.id = "steps"; host.append(steps);
+}
+
+async function play(host, docId, text) {
+  const steps = $("#steps", host); steps.innerHTML = "";
+  const d = await post("/v1/gauntlet/run", { doc_id: docId, text });
+
+  // One at a time, so it is watchable rather than a wall of results.
+  for (const s of d.steps) {
+    const n = el("div", "step " + (s.passed ? "pass" : "fail"));
+    n.append(el("span", "mark", s.passed ? "✓" : "✕"));
+    const body = el("div");
+    body.append(el("div", null, s.name));
+    body.append(el("div", "muted", s.detail));
+    n.append(body);
+    steps.append(n);
+    await new Promise(r => setTimeout(r, 260));
+    n.classList.add("shown");
+  }
+  const m = el("div", "money" + (d.stopped ? "" : " safe"), d.would_have_paid);
+  steps.append(m);
+
+  const c = d.corpus || {};
+  steps.append(el("p", "muted",
+    `Recorded. ${plural(c.attempts, "attempt")} so far, ` +
+    `the deepest got past ${plural(c.deepest, "check")}.`));
+}
+
+/* --------------------------------------------------------------------------- tabs */
+
+const LOADERS = { queue: loadQueue, stopped: loadStopped, break: loadBreak };
+function show(name) {
+  document.querySelectorAll("nav button").forEach(b =>
+    b.setAttribute("aria-selected", String(b.dataset.tab === name)));
+  ["queue", "stopped", "break"].forEach(n => $("#" + n).classList.toggle("hide", n !== name));
+  LOADERS[name]();
+  history.replaceState(null, "", `#${name}`);
+}
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => show(b.dataset.tab));
+const wanted = location.hash.slice(1);
+show(wanted in LOADERS ? wanted : "queue");
+</script>

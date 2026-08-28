@@ -35,9 +35,10 @@ import re
 import time
 from dataclasses import dataclass
 
-from praetor import authority, costguard, trace
+from praetor import authority, costguard, resolution, trace
+from praetor.types import InvoiceRecord
 from praetor.agents import local_reader
-from praetor.agents.reader import MODEL_CHAIN, _api_key
+from praetor.agents.reader import MODEL_CHAIN, _client
 
 # Fields where no in-document justification is ever sufficient.
 PRIVILEGED_FIELDS = {"bank_account"}
@@ -103,8 +104,16 @@ def _is_privileged(findings) -> bool:
 
 def adjudicate(findings, pattern, context: list[str], client=None,
                models=MODEL_CHAIN, register=None, allow_local: bool = True,
-               invoice_amount: float | None = None) -> Adjudication:
-    """Ask the agent, then let the gate have the last word."""
+               invoice_amount: float | None = None, record=None,
+               require_rule: bool = False) -> Adjudication:
+    """Ask the agent, then let the gate have the last word.
+
+    `require_rule` turns on Rule 4 (`praetor/resolution.py`): a resolve stands only if
+    some pre-authorised rule independently verifies. It is off by default because
+    turning it on changes outcomes, and FINDINGS §6 was measured without it -- shipping
+    it silently would leave a published number describing a system that no longer runs.
+    Enable it and re-measure together, never one without the other.
+    """
     if not findings:
         return Adjudication("resolve", "resolve", "no findings", False)
 
@@ -122,8 +131,7 @@ def adjudicate(findings, pattern, context: list[str], client=None,
     context_txt = "\n".join(f"- {c}" for c in context if c.strip()) or "- (nothing else)"
 
     if client is None:
-        from google import genai
-        client = genai.Client(api_key=_api_key())
+        client = _client()
 
     prompt = PROMPT.format(findings=finding_txt, pattern=pattern_txt, context=context_txt)
 
@@ -198,5 +206,16 @@ def adjudicate(findings, pattern, context: list[str], client=None,
         if bad:
             return _traced("escalate", True,
                            f"unverified authority: {bad[0].describe()}")
+        # Rule 4. The agent may point at a reason, never author one. If nothing the
+        # buyer already knows verifies, the resolve is void -- and a sentence claiming
+        # something unverifiable ("agreed on the call last Tuesday") never gets read,
+        # so it cannot help. See praetor/resolution.py.
+        if require_rule:
+            held = resolution.any_rule_holds(
+                findings, record if record is not None else InvoiceRecord(doc_id=""),
+                pattern, context, register, invoice_amount)
+            if held is None:
+                return _traced("escalate", True,
+                               "no pre-authorised rule holds for this exception")
 
     return _traced(agent_decision, False)

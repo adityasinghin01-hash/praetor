@@ -23,6 +23,7 @@ No LLM in this file.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -121,6 +122,52 @@ CREATE TABLE IF NOT EXISTS approvals (
     PRIMARY KEY (tenant_id, doc_id),
     FOREIGN KEY (tenant_id, doc_id) REFERENCES documents(tenant_id, doc_id)
 );
+
+-- What a person did about an invoice, in their own words.
+--
+-- "I called Meridian, spoke to Anja, she confirmed the account" is the single most
+-- valuable sentence in an AP fraud investigation, and in most teams it exists only in
+-- someone's memory or a private inbox. When a payment goes wrong, the analyst is asked
+-- what they checked, and having no answer is how a careful person ends up blamed.
+--
+-- Append only. Nothing here is ever updated or deleted, because a note that can be
+-- edited after the fact is not evidence of anything. Kept separate from `approvals` so
+-- a person can record a phone call WITHOUT approving -- which is exactly what should
+-- happen when the call did not go well.
+CREATE TABLE IF NOT EXISTS case_notes (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id  TEXT NOT NULL,
+    doc_id     TEXT NOT NULL,
+    author     TEXT NOT NULL REFERENCES users(id),
+    kind       TEXT NOT NULL,          -- 'note' | 'called' | 'rejected'
+    body       TEXT NOT NULL,
+    at         TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS case_notes_doc ON case_notes (tenant_id, doc_id, id);
+
+-- Accounts a human has actually approved a payment to.
+--
+-- This is the production trusted store, and the ONLY way a row gets in here is
+-- record_approval(). Not ingestion, not extraction, not the agent -- approval.
+--
+-- The distinction is the whole point. eval/build_vendor_master.py derives "accounts we
+-- have seen from this vendor" from a directory of documents, which is correct for
+-- MEASURING a detection rule and wrong as a trust boundary: an attacker who can send
+-- you invoices can write to it. Two invoices and their account is "known". Here, an
+-- account becomes trusted only when a person approved paying it, which makes the
+-- segregation-of-duties control do double duty -- it authorises the payment AND it is
+-- the sole mechanism that establishes trust. See docs/DECISIONS.md #12.
+CREATE TABLE IF NOT EXISTS trusted_accounts (
+    tenant_id     TEXT NOT NULL REFERENCES tenants(id),
+    vendor_key    TEXT NOT NULL,
+    bank_account  TEXT NOT NULL,          -- normalised: alphanumerics, upper
+    first_doc_id  TEXT NOT NULL,          -- the invoice a human approved
+    approved_by   TEXT NOT NULL,          -- who established the trust
+    at            TEXT NOT NULL,
+    PRIMARY KEY (tenant_id, vendor_key, bank_account)
+);
+CREATE INDEX IF NOT EXISTS trusted_accounts_vendor
+    ON trusted_accounts(tenant_id, vendor_key);
 
 -- The buyer's own purchase orders: the trusted record praetor/authority.py checks
 -- document-claimed approvals against, and the amounts the policy gate reconciles to.
@@ -275,9 +322,46 @@ def record_approval(conn, tenant_id, doc_id, approved_by, codes) -> dict:
                 f"at {existing['at']}") from e
         raise
 
+    _establish_trust(conn, tenant_id, doc_id, approved_by.strip().lower())
+
     return dict(conn.execute(
         "SELECT * FROM approvals WHERE tenant_id=? AND doc_id=?",
         (tenant_id, doc_id)).fetchone())
+
+
+def norm_account(s: str | None) -> str:
+    """One spelling of an account. Formatting is not identity."""
+    return re.sub(r"[^A-Za-z0-9]+", "", s or "").upper()
+
+
+def _establish_trust(conn, tenant_id: str, doc_id: str, approved_by: str) -> str | None:
+    """A human approved this invoice, so its account becomes trusted for this vendor.
+
+    Called only from record_approval, and record_approval is the only caller. That is
+    the trust policy in one sentence: approval establishes trust, arrival never does.
+
+    Returns the account newly trusted, or None if the document carried no account or
+    the account was already trusted.
+    """
+    doc = conn.execute("SELECT vendor_key FROM documents WHERE tenant_id=? AND doc_id=?",
+                       (tenant_id, doc_id)).fetchone()
+    if doc is None or not doc["vendor_key"]:
+        return None
+
+    row = conn.execute(
+        "SELECT value FROM findings"
+        " WHERE tenant_id=? AND doc_id=? AND field='bank_account' AND value IS NOT NULL"
+        " LIMIT 1", (tenant_id, doc_id)).fetchone()
+    acct = norm_account(row["value"]) if row else ""
+    if not acct:
+        return None
+
+    cur = conn.execute(
+        "INSERT OR IGNORE INTO trusted_accounts"
+        "(tenant_id, vendor_key, bank_account, first_doc_id, approved_by, at)"
+        " VALUES (?,?,?,?,?,?)",
+        (tenant_id, doc["vendor_key"], acct, doc_id, approved_by, now()))
+    return acct if cur.rowcount else None
 
 
 # ---------------------------------------------------------------- reads
@@ -294,6 +378,45 @@ def findings_for(conn, tenant_id: str, doc_id: str) -> list[dict]:
     return [dict(r) for r in conn.execute(
         "SELECT code, field, detail, value, span_id, tainted"
         "  FROM findings WHERE tenant_id=? AND doc_id=?", (tenant_id, doc_id))]
+
+
+NOTE_KINDS = ("note", "called", "rejected")
+MAX_NOTE = 2000
+
+
+def add_note(conn, tenant_id: str, doc_id: str, author: str, body: str,
+             kind: str = "note") -> dict:
+    """Record what a person did. Append only, and the author comes from the session.
+
+    Deliberately permitted on any document, whatever its state. An analyst who rings a
+    supplier and is told "that is not our account" needs to write that down immediately,
+    and making the note conditional on approving would lose exactly the note that matters
+    most.
+    """
+    if kind not in NOTE_KINDS:
+        raise ValueError(f"unknown note kind: {kind!r}")
+    body = (body or "").strip()[:MAX_NOTE]
+    if not body:
+        raise ValueError("a note must say something")
+    at = now()
+    with tx(conn):
+        cur = conn.execute(
+            "INSERT INTO case_notes (tenant_id, doc_id, author, kind, body, at)"
+            " VALUES (?,?,?,?,?,?)", (tenant_id, doc_id, author, kind, body, at))
+    return {"id": cur.lastrowid, "tenant_id": tenant_id, "doc_id": doc_id,
+            "author": author, "kind": kind, "body": body, "at": at}
+
+
+def notes_for(conn, tenant_id: str, doc_id: str) -> list[dict]:
+    return [dict(r) for r in conn.execute(
+        "SELECT id, author, kind, body, at FROM case_notes"
+        "  WHERE tenant_id=? AND doc_id=? ORDER BY id", (tenant_id, doc_id))]
+
+
+def all_notes(conn, tenant_id: str) -> list[dict]:
+    return [dict(r) for r in conn.execute(
+        "SELECT id, doc_id, author, kind, body, at FROM case_notes"
+        "  WHERE tenant_id=? ORDER BY id DESC", (tenant_id,))]
 
 
 def role_of(conn, user_id: str, tenant_id: str) -> str | None:
@@ -313,6 +436,24 @@ def approvals(conn, tenant_id: str | None = None) -> list[dict]:
                             (tenant_id,))
     else:
         rows = conn.execute("SELECT * FROM approvals ORDER BY at DESC")
+    return [dict(r) for r in rows]
+
+
+def trusted_accounts(conn, tenant_id: str, vendor_key: str) -> set[str]:
+    """Accounts a human approved paying this vendor. The production trust boundary."""
+    return {r["bank_account"] for r in conn.execute(
+        "SELECT bank_account FROM trusted_accounts WHERE tenant_id=? AND vendor_key=?",
+        (tenant_id, vendor_key))}
+
+
+def trust_log(conn, tenant_id: str | None = None) -> list[dict]:
+    """Every trust decision, and who made it. An auditor's first question."""
+    if tenant_id:
+        rows = conn.execute(
+            "SELECT * FROM trusted_accounts WHERE tenant_id=? ORDER BY at DESC",
+            (tenant_id,))
+    else:
+        rows = conn.execute("SELECT * FROM trusted_accounts ORDER BY at DESC")
     return [dict(r) for r in rows]
 
 

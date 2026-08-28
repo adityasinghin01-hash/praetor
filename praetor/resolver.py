@@ -14,13 +14,11 @@ No LLM in this file, by design.
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass, field
 
 from praetor import trace
+from praetor.guard import Guard, is_reference
 from praetor.types import Field, InvoiceRecord, Provenance
-
-SPAN_ID_RE = re.compile(r"^p\d+:[0-9._]+$")
 
 
 class ResolutionError(ValueError):
@@ -38,7 +36,8 @@ class Resolution:
 
 
 def looks_like_span_id(value: str) -> bool:
-    return bool(SPAN_ID_RE.match(value.strip()))
+    """Kept as the invoice layer's name for `guard.is_reference`."""
+    return is_reference(value)
 
 
 def resolve(
@@ -73,26 +72,26 @@ def resolve(
 
 
 def _resolve_into(res, reader_output, spans, doc_hash) -> None:
+    """Which field names exist is invoice knowledge; the grounding is not.
+
+    Everything below the field-name check is `praetor/guard.py` -- the same mechanism a
+    caller with no invoices gets. Delegating rather than reimplementing is the point:
+    two copies of a security check are two things that can drift apart, and the one that
+    drifts is always the one nobody is looking at.
+    """
+    known: dict[str, object] = {}
     for attr, raw in reader_output.items():
         if not hasattr(res.record, attr):
             res.rejected[attr] = "unknown field"
-            continue
-        if raw is None:
-            continue
-        ref = str(raw).strip()
-        if not ref:
-            continue
+        else:
+            known[attr] = raw
 
-        if not looks_like_span_id(ref):
-            # The model emitted a value rather than a reference. This is exactly
-            # the failure mode an injected document tries to cause.
-            res.rejected[attr] = f"not a span reference: {ref[:40]!r}"
-            continue
-        if ref not in spans:
-            res.rejected[attr] = f"span not present in document: {ref}"
-            continue
-
+    result = Guard(spans, doc_hash=doc_hash, doc_id=res.record.doc_id).ground(known)
+    res.rejected.update(result.refused)
+    for attr, grounded in result.values.items():
         setattr(res.record, attr, Field(
-            value=spans[ref],
-            prov=Provenance(doc_hash=doc_hash, span_id=ref, tainted=True),
+            value=grounded.value,
+            prov=Provenance(doc_hash=grounded.origin.doc_hash,
+                            span_id=grounded.origin.span_id,
+                            tainted=grounded.origin.tainted),
         ))

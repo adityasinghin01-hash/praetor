@@ -35,7 +35,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from praetor.agents import local_reader, reader as remote_reader  # noqa: E402
-from praetor.docile_adapter import load_annotation, spans_of, to_record  # noqa: E402
+from praetor import canary  # noqa: E402
+from praetor.docile_adapter import (load_annotation, span_kinds_of,  # noqa: E402
+                                    spans_of, to_record)
 from praetor.resolver import resolve  # noqa: E402
 
 FIELDS = ("vendor_name", "invoice_number", "amount_total",
@@ -74,6 +76,8 @@ def main() -> None:
     per_field = {f: Counter() for f in FIELDS}
     rejections: Counter = Counter()
     rejection_examples: list[str] = []
+    canary_fired: Counter = Counter()
+    canary_examples: list[str] = []
     started = time.time()
 
     print(f"running {len(docs)} documents through the real path on {label}\n")
@@ -86,8 +90,16 @@ def main() -> None:
 
             mapping = read_spans(spans)
             res = resolve(mapping, spans, doc_hash, p.stem)
+            # The canary runs on the live path, not only in tests. It reads the span's
+            # LABEL, never its text, so nothing an attacker writes is an input to it.
+            canaries = canary.check(res.record, span_kinds_of(ann))
+            for c in canaries:
+                canary_fired[c.code] += 1
+                if len(canary_examples) < 6:
+                    canary_examples.append(f"{p.stem}  {c.detail}")
 
-            row = {"doc_id": p.stem, "rejected": res.rejected, "fields": {}}
+            row = {"doc_id": p.stem, "rejected": res.rejected,
+                   "canary": [c.code for c in canaries], "fields": {}}
             for f in FIELDS:
                 expected = truth.get(f)
                 got = res.record.get(f)
@@ -153,6 +165,18 @@ def main() -> None:
         print(f"    {ex[:96]}")
     if not total_rejected:
         print("    none on this sample")
+
+    # ---- the canary, counted. Fires on origin, never on wording.
+    total_canary = sum(canary_fired.values())
+    print(f"\nCANARY FIRINGS   {total_canary}")
+    print("  (a guarded field arrived from a span the document does not label as a")
+    print("   place that field can legitimately come from -- checked without reading it)")
+    for code, n in canary_fired.most_common():
+        print(f"    {code:<18} {n}")
+    for ex in canary_examples:
+        print(f"    {ex[:96]}")
+    if not total_canary:
+        print("    none on this sample -- no guarded field came from an impossible place")
 
     print(f"\nthroughput: {len(docs) / elapsed:.2f} documents/second "
           f"({elapsed:.1f}s total, local, single machine)")
