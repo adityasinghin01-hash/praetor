@@ -9,3 +9,9 @@ opentelemetry-sdk>=1.20  # tracing; optional -- without it tracing is a no-op
 
 # Only needed to re-render docs/architecture.png from its HTML source:
 #   pip install Pillow
+#
+# Only needed to re-check the hand-rolled logistic regression in eval/train_pathb.py
+# against a reference implementation. tests/test_pathb.py skips without it, the same way
+# tests/test_trace.py skips without the OpenTelemetry SDK. Path B fits and runs on the
+# standard library alone, which is the point:
+#   pip install scikit-learn

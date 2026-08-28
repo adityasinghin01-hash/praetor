@@ -8,16 +8,17 @@
 #   make trace      run the kernel with tracing on and print one document's spans
 #   make readpath   the real path end to end: reader -> resolver -> rules (free)
 #   make volume     5,000 documents through the kernel: throughput and concurrency
+#   make pathb      fit the second extraction path, then try to break it
 #   make verify     everything that needs no API key, end to end
 #
-# Targets that spend nothing are the default. The two that call the Gemini API
-# (attacks, adjudicate) are never run by `demo` or `verify`, and both are capped
-# by praetor/costguard.py.
+# Targets that spend nothing are the default. The three that call the Gemini API
+# (attacks, adjudicate, twopath) are never run by `demo` or `verify`, and all are
+# capped by praetor/costguard.py. `armor` calls Google Model Armor, which is free.
 
 PY := $(shell [ -x .venv/bin/python ] && echo .venv/bin/python || echo python3)
 RUN := PYTHONPATH=. $(PY)
 
-.PHONY: help install test demo verify corpus rules db dashboard serve trace readpath volume attacks adjudicate diagram clean
+.PHONY: help install test demo verify corpus rules db dashboard serve trace readpath canary pathb app pdf volume attacks adjudicate twopath armor diagram clean
 
 help:
 	@sed -n '2,10p' Makefile | sed 's/^# \?//'
@@ -54,6 +55,29 @@ DOCS ?= 5000
 # Gemma; add --remote to use Gemini instead (one call per document, capped by costguard).
 readpath:
 	$(RUN) eval/run_readpath.py --limit $(N)
+
+canary:
+	$(RUN) eval/run_canary.py
+
+# The second extraction path: fit it (held out by layout) and then try to break it.
+# Deterministic, no model, no network. FINDINGS sec 16 and 17.
+pathb:
+	$(RUN) eval/train_pathb.py
+	@echo
+	$(RUN) eval/run_pathb_stress.py
+
+# The front door: a real PDF becomes spans the kernel accepts. DECISIONS.md #9.
+# DOC=V000_003 picks the invoice; --cached re-uses a saved response and charges nothing.
+PDFDOC ?= V000_003
+pdf:
+	$(RUN) eval/make_invoice_pdf.py $(PDFDOC)
+	$(RUN) eval/run_pdf.py out/pdf/$(PDFDOC).pdf
+
+# The three tabs: Priya's queue, what we stopped, and try to break it.
+# Nothing is baked into the page -- it reads /v1/* on every request.
+app: db
+	@echo "open http://127.0.0.1:8000/app  (sign in, password: praetor)"
+	$(RUN) dashboard/serve.py
 
 N ?= 25
 
@@ -95,6 +119,19 @@ attacks:
 
 adjudicate:
 	$(RUN) eval/run_adjudication.py
+
+# The headline of phase 3: all 20 payloads against BOTH extraction paths, on the same
+# spans of the same document. 100 model calls, about Rs 8. Resumable.
+twopath:
+	$(RUN) eval/run_twopath.py --delay 2
+
+# ------------------------------------------------------- needs gcloud, costs nothing
+
+# The 20 payloads through Google Model Armor, three templates, two framings. Turns
+# DECISIONS #1 from an assertion into a measurement. Free to 2M tokens/month.
+#   gcloud services enable modelarmor.googleapis.com --project praetor-run-2026
+armor:
+	$(RUN) eval/run_model_armor.py
 
 # ---------------------------------------------------------------- docs
 

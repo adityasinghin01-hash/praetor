@@ -93,12 +93,12 @@ Or skip steps 2–4 entirely and run `make install`, which does all three.
 make test
 ```
 
-You should see **`115 passed`**. If you do, everything is set up correctly.
+You should see **`445 passed`**. If you do, everything is set up correctly.
 
 (If you'd rather not use `make`: `PYTHONPATH=. .venv/bin/python -m pytest tests/ -q`.
 Use `.venv/bin/python`, not bare `python3` — the packages only exist inside the venv.)
 
-These 115 tests are not normal tests. They are our security promises written as code.
+These 445 tests are not normal tests. They are our security promises written as code.
 If one ever fails, one of our claims to the judges has become untrue.
 
 ---
@@ -189,8 +189,9 @@ corpus, and the result is the sharpest thing in the project:
 
 | | Gemini 3.5 Flash-Lite | Gemma 3 1b (local) |
 |---|---|---|
-| F1 | **1.000** | 0.384 |
-| Values the resolver refused | **0** | **25 of 25** |
+| F1 | **1.000** | **0.040** (was 0.384 on the one-layout corpus) |
+| Values the resolver refused | **0** | **20** |
+| Bank account ever populated | 10/10 correct | **never** |
 
 The point is not the accuracy — that belongs to whichever model you point at the
 documents, and it changes with every release. The point is the **rejection count**, which

@@ -39,26 +39,53 @@ sure the value never reaches the payment sink.
 
 **The model handles references, never values.**
 
-1. Spans come from the document's own annotations — each has a stable `span_id`.
+1. Spans come from the document — from annotations in the corpus, or from Document AI
+   for a real PDF (`praetor/docai_adapter.py`). Each has a stable `span_id`.
 2. The **reader** (Gemma 3 on-device, or Gemini 3.5 Flash-Lite; no tools, no memory)
    sees spans and returns *only* span IDs.
 3. The **resolver** (no LLM) looks those IDs up. Anything that is not a real span is
    rejected — so the model cannot invent a bank account.
 4. Every resolved value is marked `TAINTED` and carries its `doc_hash` and `span_id`.
-5. The **rules baseline** (no AI) flags deviations from what that supplier normally does.
-6. The **exception agent** adjudicates the flagged ones. It sees findings and context —
+5. The **canary** (`praetor/canary.py`, no LLM) asks where on the page the value came
+   from. A bank account is printed in a payment block, never in a free-text note — so an
+   account resolved from prose is structurally impossible, however convincing the prose
+   is. **It reads the span's label and never its text**, so nothing an attacker writes is
+   an input to it. Measured: **0 false positives on 350 documents, and every account
+   lifted out of prose refused — all 42 such documents, including all 20 carrying an
+   injected payload**. One honest caveat: on a real PDF that label comes from Document AI
+   rather than from an annotation, so it is a model's opinion about a document the
+   attacker controls — weaker, and written up in [FINDINGS §15](FINDINGS.md).
+6. The **second path** (`praetor/pathb.py`, no LLM) extracts the same field again, by a
+   mechanism that cannot fail the same way. It scores each span on character ratios and
+   checksums — no vocabulary, no keywords, nothing that reads a word — so the sentence
+   that moves a model is not an input to it. Two strings with the same character classes
+   and opposite meanings produce the *identical* vector. If the two paths disagree, or
+   this one abstains, a person looks; agreement never releases a payment
+   (`praetor/corroboration.py`). Measured over 100 trials, 20 payloads across 5 layouts:
+   **8 beat the model, 0 beat the second path, 0 beat both**
+   ([FINDINGS §18](FINDINGS.md)). It is not magic — an attacker who stops writing
+   sentences and prints a bare account-shaped token beats it completely
+   ([FINDINGS §17](FINDINGS.md)); step 5 is what stands after that.
+7. The **rules baseline** (no AI) flags deviations from what that supplier normally does.
+8. The **exception agent** adjudicates the flagged ones. It sees findings and context —
    never raw document text.
-7. The **policy gate** (no LLM) has the last word. Three rules run after the agent, all
+9. The **policy gate** (no LLM) has the last word. Four rules run after the agent, all
    deterministic:
    - a tainted account not in the vendor master cannot be paid;
    - an authorisation the document claims for itself counts only if it names a
      reference held in the buyer's own records **and** the invoice reconciles to the
      amount that order was raised for (`praetor/authority.py`);
    - one client's vendor master can never vouch for another's invoice
-     (`praetor/tenancy.py`).
+     (`praetor/tenancy.py`);
+   - **Rule 4** — a resolve stands only if some pre-authorised rule's preconditions
+     actually hold, checked against the buyer's own records (`praetor/resolution.py`).
+     This closes "we agreed on the call last Tuesday", which claims nothing a register
+     could hold. Built and tested; **off by default**, because enabling it changes
+     outcomes and the published 28% figure was measured without it. See
+     [DECISIONS #14](docs/DECISIONS.md).
 
    And **the agent can only `propose`, never `approve`**.
-8. A human approves. That single act is both the SOX segregation-of-duties control and
+10. A human approves. That single act is both the SOX segregation-of-duties control and
    the declassification step — and in `make serve` it is a real button that calls the
    real `gate.approve()`.
 
@@ -68,7 +95,7 @@ sure the value never reaches the payment sink.
 
 **Prerequisites:** Python **3.11 or newer** and `make`. Nothing else. No cloud account,
 no API key, no billing. Verified on 27 Aug from a clean clone on **3.13.14 and 3.14.6** —
-all 115 tests pass on both. (An earlier draft of this line said "not 3.14", which was
+all 445 tests pass on both. (An earlier draft of this line said "not 3.14", which was
 left over from a `torch` dependency the project no longer has.)
 
 ```bash
@@ -88,9 +115,15 @@ make readpath               # local Gemma, free; N=10 for a shorter run
 ```
 
 This is the path the architecture is about, and it reports both what the reader got right
-and what the resolver refused. On a 1b local model, F1 0.384 and **25 of 25 documents had
-a literal value rejected**; on Gemini, F1 1.000 and no rejections. Neither reader could
-introduce a value. See [FINDINGS §10](FINDINGS.md).
+and what the resolver refused. On a 1b local model, F1 **0.040** and **20 values
+refused**; on Gemini, F1 **1.000** and no rejections. Neither reader ever populated the
+bank account with anything it invented.
+
+The weak reader's F1 was 0.384 until 27 Aug, when the corpus gained five layouts. It fell
+because the old corpus put every field at the same coordinates, so one memorised span id
+scored correct on all 350 documents. The capable reader is unchanged at 1.000 on the
+harder corpus — so the gap is capability, not difficulty. **The rejection count did not
+move.** See [FINDINGS §10](FINDINGS.md).
 
 To watch provenance move through the system:
 
@@ -123,6 +156,68 @@ the document it came from — and the approve button calls the real
 the browser cannot name who is approving: posting a different `human_id` in the request
 body is ignored and the approval records the signed-in user. Approvals land in SQLite,
 keyed so the same document cannot be approved twice.
+
+### A real PDF, end to end
+
+```bash
+make pdf                        # or: make pdf PDFDOC=V003_003
+```
+
+Renders one corpus invoice back into an actual PDF, sends it to Document AI, and runs the
+result through the whole kernel — spans, reader, resolver, canary, rules, gate. This is
+`DECISIONS.md` #9, the project's largest admitted gap, closed on the ingestion side:
+Document AI returns `normalizedVertices`, which is the shape the adapter already
+consumed, so **nothing in the kernel changed**.
+
+Five invoices, one per layout: **30 of 30 fields correct**, 2.46s and $0.01 a page. On the
+first end-to-end run the local 1b reader answered `currency` with `'EUR'` — a currency
+that appears nowhere on a document that says GBP — and the resolver refused it. See
+[FINDINGS §15](FINDINGS.md), including an honest note on why the canary is weaker when
+span labels come from a model rather than from an annotation.
+
+### The three views people actually use
+
+```bash
+make app              # http://127.0.0.1:8000/app
+```
+
+**My queue** — what is left for one analyst, worst first, each row saying what is wrong
+in one sentence and what to do about it. No code words appear on any screen: a test
+discovers every finding the system can emit and fails the build if one has no plain
+sentence, and a second test scans every string the API returns for jargon. The supplier's
+phone number comes from the buyer's own records and says so, because ringing the number
+printed on a fraudulent invoice is the most common way this gets past a careful person.
+
+**What we stopped** — for a manager. What the controls prevented, kept per currency, and
+every decision with who made it and what they saw.
+
+**Try to break it** — type your own line onto a real invoice and watch the checks run one
+at a time. It runs the real kernel and assumes the reading model was completely fooled,
+which is the honest worst case and the only way to show that being fooled does not
+matter. A line carrying an account and a line carrying an argument take different routes
+through the system, and the sentence at the end names the money:
+
+> Stopped at step 3. Without these checks, GBP 2,614.65 would have gone to
+> DE89370400440532013000.
+
+Every attempt is recorded with which checks it got past.
+
+### The guard, on its own
+
+`praetor/guard.py` is the security kernel with the invoices taken out — **92 lines, no
+dependencies, no domain**. Give it spans and a function that calls your model:
+
+```python
+guard = Guard(spans, doc_hash="sha256:...")
+result = guard.run(my_model_reader)
+result.values     # provably out of the document
+result.refused    # everything the model tried that was not a pointer
+```
+
+`resolver.py` and `canary.py` are adapters over it, so there is one implementation rather
+than two that drift. Tests assert it imports nothing outside the standard library, nothing
+from `praetor`, and that its code contains no invoice vocabulary — and two of them run it
+on a medical record and a contract to show the point rather than argue it.
 
 To prove the corpus itself is reproducible rather than committed-and-trusted:
 
@@ -218,13 +313,16 @@ design stops every one *assuming the reader is fully owned*.
 ## Layout
 
 ```
-praetor/        types · resolver · gate · baseline_rules · authority · tenancy
-                costguard · docile_adapter
-praetor/agents/ reader (Gemini) · local_reader (Gemma/Ollama) · exception_agent
+praetor/        guard (the mechanism, no domain) · resolver · canary · gate
+                resolution (Rule 4) · baseline_rules · authority · tenancy · types
+                suppliers · store · auth · costguard · docile_adapter
+praetor/agents/ reader (Gemini/Vertex) · local_reader (Gemma/Ollama) · exception_agent
 eval/           make_invoices · build_vendor_master · find_exceptions · run_eval
-                measure_attacks · run_adjudication · fetch_sroie
+                measure_attacks · run_adjudication · run_canary · fetch_sroie
 attacks/        payload taxonomy + public-dataset loader
-dashboard/      build.py -> index.html · serve.py, which handles real approvals
+dashboard/      language (every word a person reads) · api (the JSON the tabs read)
+                gauntlet (try to break it) · attack_log · ratelimit
+                app.html (the three tabs) · serve.py · build.py -> index.html
 docs/           architecture diagram (HTML source + PNG + PDF) and its renderer
 results/        the published measurements, so a clean clone reproduces them
 tests/          the invariants
