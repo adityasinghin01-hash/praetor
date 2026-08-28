@@ -5,6 +5,7 @@
 #   make demo       full offline demo: rules baseline + review dashboard
 #   make db         load results into SQLite (tenants, users, approvals)
 #   make serve      the review queue with live approvals (http://127.0.0.1:8000)
+#   make api        the same contract on FastAPI: paging, live updates, uploads
 #   make trace      run the kernel with tracing on and print one document's spans
 #   make readpath   the real path end to end: reader -> resolver -> rules (free)
 #   make volume     5,000 documents through the kernel: throughput and concurrency
@@ -21,7 +22,7 @@
 PY := $(shell [ -x .venv/bin/python ] && echo .venv/bin/python || echo python3)
 RUN := PYTHONPATH=. $(PY)
 
-.PHONY: help install test demo verify corpus rules db dashboard serve trace readpath canary pathb app pdf volume attacks adjudicate twopath armor ingest tenancy queue diagram clean
+.PHONY: help install test demo verify corpus rules db dashboard serve trace readpath canary pathb app pdf volume attacks adjudicate twopath armor ingest tenancy queue api diagram clean
 
 help:
 	@sed -n '2,10p' Makefile | sed 's/^# \?//'
@@ -98,6 +99,12 @@ DOC ?= V014_009
 # adjudications and purchase orders. Approvals are never touched by a re-import.
 db:
 	$(RUN) eval/build_db.py
+
+# The FastAPI transport: same JSON as `make serve`, plus paging, live updates and
+# uploads, with OpenAPI at /v1/docs. `make serve` remains the zero-dependency path.
+api: db
+	@echo "open http://127.0.0.1:8000/v1/docs"
+	$(RUN) dashboard/asgi.py
 
 dashboard:
 	$(RUN) dashboard/build.py

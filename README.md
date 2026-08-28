@@ -103,7 +103,7 @@ sure the value never reaches the payment sink.
 
 **Prerequisites:** Python **3.11 or newer** and `make`. Nothing else. No cloud account,
 no API key, no billing. Verified on 27 Aug from a clean clone on **3.13.14 and 3.14.6** —
-all 508 tests pass on both. (An earlier draft of this line said "not 3.14", which was
+all 528 tests pass on both. (An earlier draft of this line said "not 3.14", which was
 left over from a `torch` dependency the project no longer has.)
 
 ```bash

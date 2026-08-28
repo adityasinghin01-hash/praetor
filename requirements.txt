@@ -7,6 +7,15 @@ pytest>=8.0            # the invariants, which are the security claims
 
 opentelemetry-sdk>=1.20  # tracing; optional -- without it tracing is a no-op
 
+# The web transport. dashboard/asgi.py serves the same JSON contract as
+# dashboard/serve.py, plus paging, live updates and uploads. Both are kept:
+# serve.py is standard library only, so `make demo` works on a laptop with
+# nothing installed, and a judge cloning this repo can reach the queue without
+# a package index. tests/test_asgi.py skips where these are absent.
+fastapi>=0.115
+uvicorn>=0.30
+python-multipart>=0.0.9   # uploads; FastAPI refuses to define the route without it
+
 # Only needed to re-render docs/architecture.png from its HTML source:
 #   pip install Pillow
 #
