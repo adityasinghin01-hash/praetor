@@ -18,3 +18,11 @@ out/
 # DECISIONS #16 is about what committed derived artifacts do when they go stale.
 web/node_modules/
 web/dist/
+
+# Terraform. The code is committed; the state, the lock and the downloaded provider are
+# derived — and the state can contain resource attributes that should not be in git.
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/*.tfplan

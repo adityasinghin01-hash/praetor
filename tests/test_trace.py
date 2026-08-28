@@ -4,6 +4,7 @@ The architecture has claimed since its first draft that spans carry taint labels
 throughout. These pin that claim, and pin the two things that must stay true of it:
 tracing is off unless asked for, and a missing tracer never changes an outcome.
 """
+import json
 import pytest
 
 from praetor import trace
@@ -122,3 +123,74 @@ def test_taint_describes_a_tainted_field():
 
 def test_taint_of_a_missing_field_says_so():
     assert trace.taint(None) == {"praetor.present": False}
+
+
+# ---------------------------------------------------------------------------
+# Phase 7: tracing is ON in production. Off-by-default was right while the only
+# destination was a file somebody had to ask for; it is wrong for a deployed service,
+# where the taint label exists to answer "where did this paid value come from" months
+# later and nobody switches tracing on before the incident that needs it.
+
+def test_tracing_is_off_on_a_laptop(monkeypatch):
+    monkeypatch.delenv("PRAETOR_TRACE", raising=False)
+    monkeypatch.delenv("K_SERVICE", raising=False)
+    assert trace.enabled() is False
+
+
+def test_tracing_is_on_in_production(monkeypatch):
+    """`K_SERVICE` is set by Cloud Run and by nothing else."""
+    monkeypatch.delenv("PRAETOR_TRACE", raising=False)
+    monkeypatch.setenv("K_SERVICE", "praetor-ingest")
+    assert trace.in_production() is True
+    assert trace.enabled() is trace.AVAILABLE
+
+
+def test_an_explicit_setting_wins_in_both_directions(monkeypatch):
+    """Including PRAETOR_TRACE=0 to silence a deployed run -- otherwise 'on by default'
+    becomes 'on, and you cannot turn it off'."""
+    monkeypatch.setenv("K_SERVICE", "praetor-ingest")
+    for value in ("0", "false", "no", "off"):
+        monkeypatch.setenv("PRAETOR_TRACE", value)
+        assert trace.enabled() is False, value
+
+    monkeypatch.delenv("K_SERVICE", raising=False)
+    for value in ("1", "true", "yes", "on"):
+        monkeypatch.setenv("PRAETOR_TRACE", value)
+        assert trace.enabled() is trace.AVAILABLE, value
+
+
+def test_production_traces_do_not_go_to_a_file(monkeypatch, tmp_path):
+    """A Cloud Run filesystem is ephemeral, so a file trace vanishes with the instance
+    that wrote it -- a trace that exists and cannot be read, which is worse than none
+    because it looks like coverage."""
+    pytest.importorskip("opentelemetry.sdk.trace")
+    monkeypatch.setenv("K_SERVICE", "praetor-ingest")
+    monkeypatch.setattr(trace, "TRACE_FILE", tmp_path / "trace.jsonl")
+    monkeypatch.setattr(trace, "_provider", None)
+
+    assert trace.configure(force=True) is True
+    with trace.span("gate.evaluate", **{"praetor.doc_id": "V000_004"}):
+        pass
+    assert not (tmp_path / "trace.jsonl").exists(), "production wrote a trace to a file"
+
+
+def test_a_production_span_is_one_json_line_carrying_the_taint(monkeypatch, capsys, tmp_path):
+    """Cloud Logging parses a JSON line into structured fields, so the spans become
+    queryable by praetor.doc_id without any tracing backend existing."""
+    pytest.importorskip("opentelemetry.sdk.trace")
+    monkeypatch.setenv("K_SERVICE", "praetor-ingest")
+    monkeypatch.setattr(trace, "TRACE_FILE", tmp_path / "trace.jsonl")
+    monkeypatch.setattr(trace, "_provider", None)
+    trace.configure(force=True)
+
+    with trace.span("gate.evaluate", **{"praetor.doc_id": "V000_004",
+                                        "praetor.tainted": True}):
+        pass
+
+    lines = [l for l in capsys.readouterr().out.splitlines() if l.strip().startswith("{")]
+    assert lines, "no span reached stdout"
+    payload = json.loads(lines[-1])
+    assert payload["praetor_span"]["name"] == "gate.evaluate"
+    assert payload["praetor_span"]["attributes"]["praetor.doc_id"] == "V000_004"
+    assert payload["praetor_span"]["attributes"]["praetor.tainted"] is True
+    assert "logging.googleapis.com/trace" in payload

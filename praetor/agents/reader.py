@@ -33,6 +33,15 @@ from praetor import costguard
 # the hackathon requirement.
 MODEL_CHAIN = ("gemini-3.5-flash-lite", "gemini-3.5-flash")
 
+# Where a laptop may look for a credential. A module-level list rather than a literal
+# inside the function, so a test can point it somewhere harmless instead of shimming
+# pathlib -- a test that has to fake the filesystem to reach a branch usually means the
+# branch is not reachable enough to trust.
+#
+# NEVER consulted in production. See `_api_key`.
+ENV_FILES = (Path(__file__).resolve().parents[2] / ".env",
+             Path.home() / "dev" / "hello_agent" / ".env")
+
 WANTED_FIELDS = (
     "vendor_name", "invoice_number", "amount_total",
     "currency", "bank_account", "tax_rate", "vendor_address",
@@ -72,18 +81,38 @@ class ReaderResult:
 
 
 def _api_key() -> str:
+    """The model credential, from the environment -- and in production from nowhere else.
+
+    On a laptop this falls back to a `.env` file, which is what makes the demo runnable
+    without anybody exporting anything. **In production that fallback is switched off.**
+
+    A deployed service reading a credential off its own filesystem is the failure this
+    prevents: it means the key was baked into an image or written into a volume, where
+    it outlives the process, appears in a layer somebody can pull, and is invisible to
+    the audit trail that Secret Manager keeps. The deployed service is given
+    `GOOGLE_API_KEY` from Secret Manager at start (`--set-secrets`), so if the variable
+    is missing the correct outcome is a loud failure, not a quiet search of the disk.
+
+    `K_SERVICE` is set by Cloud Run and by nothing else, the same signal
+    `praetor/trace.py` uses.
+    """
     key = os.environ.get("GOOGLE_API_KEY")
-    for env in (Path(__file__).resolve().parents[2] / ".env",
-                Path.home() / "dev" / "hello_agent" / ".env"):
-        if key:
-            break
+    if key:
+        return key
+
+    if os.environ.get("K_SERVICE"):
+        raise SystemExit(
+            "No GOOGLE_API_KEY in the environment. This is a deployed service, so the "
+            "key must come from Secret Manager -- refusing to read a credential off the "
+            "filesystem. Redeploy with: --set-secrets GOOGLE_API_KEY=gemini-api-key:latest")
+
+    for env in ENV_FILES:
         if env.exists():
             for line in env.read_text().splitlines():
                 if line.startswith("GOOGLE_API_KEY=") and line.split("=", 1)[1].strip():
-                    key = line.split("=", 1)[1].strip()
-    if not key:
-        raise SystemExit("No GOOGLE_API_KEY (checked env, ./.env, ~/dev/hello_agent/.env)")
-    return key
+                    return line.split("=", 1)[1].strip()
+
+    raise SystemExit("No GOOGLE_API_KEY (checked env, ./.env, ~/dev/hello_agent/.env)")
 
 
 def _client():

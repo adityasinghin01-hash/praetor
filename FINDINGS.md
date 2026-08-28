@@ -1597,3 +1597,146 @@ interactive attack demo, is not ported at all — both still work on the plain `
 compute colour, so the contrast rule is disabled in that pass. The palette was designed
 against WCAG contrast targets by hand and has not been machine-verified in a real
 browser.
+
+---
+
+## 23. Actually shippable: the plan caught two changes that would have broken production
+
+Built 28–29 Aug 2026. `terraform/`, `praetor/erp.py`, `eval/run_load.py`, plus tracing and
+secret handling. Reproduce: `make tf-check`, `make tf-plan`, `make load`.
+
+### Infrastructure as code, and what a plan is actually for
+
+`terraform/` describes everything the cloud runs: the inbox bucket, both Cloud Run
+services, the Eventarc trigger, the Workflows sweep, the Scheduler job, the secret, the
+API enablements and the IAM. Validated, formatted, with `import` blocks that adopt the
+live resources rather than recreating them.
+
+**It has not been applied.** The live project was built by hand while the pipeline was
+being worked out, and Terraform arriving with an empty state plans to *create* what
+already exists. The first casualty would be the running queue. So the sequence is
+`make tf-plan`, read it, and only then decide.
+
+Reading it was not a formality. The first plan would have made two changes nobody
+intended:
+
+| What the plan revealed | Why it mattered |
+|---|---|
+| The **queue service would be retagged with the ingest image** | "One image, two entrypoints" was the intent, but `gcloud run deploy --source` built a *separate* image per service. Describing them as one would have swapped the live queue's image on the first apply. |
+| The **ingest service's ingress would change** to internal-load-balancer | Access there is enforced by IAM (`--no-allow-unauthenticated`), not by ingress. Changing it could have stopped Eventarc delivering. |
+
+Both are now described as they actually are. The current plan:
+
+```
+Plan: 6 to import, 22 to add, 4 to change, 0 to destroy.
+```
+
+**0 to destroy** is the number to read. The 22 additions are API enablements and IAM
+members, which are no-ops where they already hold; the 4 changes are image digests
+normalising to tags plus the retention policy below.
+
+One thing could not be adopted: **`google_workflows_workflow` has no import support in
+the provider.** The live sweep therefore cannot be brought under Terraform without
+deleting and recreating it. That is stated in `terraform/imports.tf` rather than papered
+over — the options are to delete the hand-made workflow, or accept that one resource
+stays outside the code.
+
+Deliberately **not** in Terraform: the billing account, the budgets and the console spend
+caps. Those are the controls that stop this project spending money, and code that can
+edit them is code that can remove them. Also excluded, and enforced by a variable
+validation rather than a comment: `gen-lang-client-0515700308`, which must stay
+billing-disabled.
+
+Staging is the same code with `var.environment = "staging"`, which suffixes every name
+and reduces the scaling. **It has not been created** — Firestore, Storage and Artifact
+Registry all bill at rest and the credits are finite. The point is that creating it is
+one command rather than an afternoon, and that it cannot drift into a different shape
+from production.
+
+### Tracing is on in production, and does not go to a file
+
+Off-by-default was right while the only destination was a local file somebody had to ask
+for. It is wrong for a deployed service: the taint label exists to answer *where did this
+paid value come from* months later, and nobody switches tracing on before the incident
+that needs it.
+
+So `trace.enabled()` is now true when `K_SERVICE` is set. And the destination changes with
+it — **a file on Cloud Run would be written to an ephemeral filesystem and lost with the
+instance**, which is a trace that exists and cannot be read, worse than none because it
+looks like coverage. Production spans go to stdout as one JSON object each, which Cloud
+Logging captures, retains and parses into queryable fields, with no exporter dependency.
+`PRAETOR_TRACE=0` still forces it off.
+
+### Secrets: production will not read a credential off its own disk
+
+`praetor/agents/reader.py` falls back to a `.env` file so `make demo` runs without anybody
+exporting anything. That fallback is now switched off when `K_SERVICE` is set. A deployed
+service reading a key from its filesystem means the key was baked into an image or written
+to a volume, where it outlives the process and is invisible to Secret Manager's audit
+trail. Missing variable in production is now a loud failure naming the fix, and
+`tests/test_secrets.py` asserts the file is never even opened there.
+
+### Backups and retention, scoped to what is actually irreplaceable
+
+Almost nothing here needs backing up. The corpus is deterministic, the vendor master is
+derived, the exceptions rebuild from `make rules`. **What cannot be reconstructed is the
+approvals** — a person's decision at a moment in time, which is also the SOX
+segregation-of-duties control. The refusal registry and the spend ledger are the same
+kind of thing.
+
+- Firestore: a daily backup schedule, 7 days retained.
+- The inbox bucket: versioning on, non-current versions deleted after 7 days, and
+  **objects deleted at 90 days** — long enough to outlast a payment cycle and a dispute
+  about one, short enough that supplier documents are not accumulating as a liability.
+
+The two retentions are deliberately aligned: a backup that outlived the bucket's own
+deletion policy would quietly defeat it.
+
+### Load: the queue is the bottleneck, at ~170 requests/second
+
+[§11](#11-volume-the-kernel-is-not-the-bottleneck-and-parallelising-it-makes-things-worse)
+measured the kernel at ~4,100 documents/second with no web layer around it. That number
+says nothing about whether the page opens. `eval/run_load.py` measures the deployed
+surface over HTTP, through the transport and the store.
+
+| Endpoint | Concurrency | req/s | p50 | p95 | p99 | Failures |
+|---|---:|---:|---:|---:|---:|---:|
+| open (`/v1/gauntlet/examples`) | 1 | 1,090 | 0.9 ms | 1.0 ms | 1.2 ms | 0 |
+| open | 64 | 1,720 | 31 ms | 46 ms | 48 ms | 0 |
+| **the queue** (`/v1/queue`) | 1 | **159** | 5.9 ms | 7.2 ms | 10.5 ms | 0 |
+| **the queue** | 64 | **170** | 370 ms | 383 ms | 386 ms | 0 |
+
+**The queue is ten times slower than an open endpoint and does not get faster with
+concurrency** — throughput is flat at ~170/s from 1 worker to 64, so it is serialised.
+The cause is known and was written down before it was measured:
+[DECISIONS #26](docs/DECISIONS.md) records that the server sorts and counts the whole
+queue on every request, because paging is a window and never a filter.
+
+For the actual workload this is not close to a problem. 170 requests/second is 14 million
+a day against an analyst processing ~300 invoices. **It is stated because the ceiling
+should be known before it is hit, and because the fix when it matters is an index, not a
+cutoff.** Zero failures at every level.
+
+Run with the rate limiter at its shipped setting instead, the same test shows it refusing
+cleanly: **682 requests answered `429` with a `Retry-After`, and 0 failed any other way.**
+A 429 is the limiter working. What would be a failure is a 5xx, a timeout, or everything
+getting through.
+
+### The ERP seam
+
+`praetor/erp.py`. Four questions — the vendor pattern, a purchase order, a supplier
+contact, and which tenants exist — as a `Protocol`, so an SAP or Oracle integration
+satisfies it by shape without importing PRAETOR or inheriting from it.
+
+The rule the seam enforces is the one the architecture rests on: **everything reachable
+through it is a record the buyer controls.** Passing a value that carries document
+provenance raises `UntrustedInput`, checked on every entry point, because an adapter that
+answered these questions from the invoice being checked would defeat
+[DECISIONS #5, #7 and #12](docs/DECISIONS.md) at once and the system would keep working
+while meaning nothing.
+
+**Stated plainly: the kernel does not use it yet.** `FileBackedERP` reproduces today's
+behaviour through the interface, but the kernel still reads its files directly. Wiring it
+through touches code every measured number depends on, so it is a separate deliberate
+step — and `tests/test_erp.py` asserts the kernel does *not* import it, so the day that
+changes, it changes on purpose.

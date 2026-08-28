@@ -761,3 +761,109 @@ paying.
 
 **Enforced by.** `web/src/Queue.test.tsx` asserts both urgency words render;
 `tests/test_frontend.py` fails if a severity loses its word form.
+
+---
+
+## 28. The infrastructure is code, and the code is not applied
+
+**Chosen.** `terraform/` describes everything the cloud runs, with `import` blocks that
+adopt the live resources. `make tf-check` and `make tf-plan` exist; there is no `apply`
+target.
+
+**Rejected: applying it**, which is what infrastructure as code is for.
+**Rejected: managing the billing account, budgets and spend caps.**
+
+**Why.** The live project was built by hand while the pipeline was being worked out, so
+Terraform with an empty state plans to *create* what already exists and the first casualty
+is the running queue. Import blocks fix that — but only if they are right, and the only
+way to know is to read a plan.
+
+Reading it was not a formality. The first plan would have retagged the live queue with the
+ingest image, because `gcloud run deploy --source` builds a separate image per service and
+the code said they shared one; and it would have changed the ingest service's ingress,
+which could have stopped Eventarc delivering. Both were caught before anything ran
+([FINDINGS §23](../FINDINGS.md)).
+
+The billing controls stay out because Terraform that can edit a spend cap is Terraform
+that can remove one. The Gemini key project stays out because it must remain
+billing-disabled, and that is enforced by a variable validation rather than a comment.
+
+**What it costs.** Infrastructure as code that has never been applied is a description,
+not a deployment — it is only as true as the last plan somebody read, and one resource
+(`google_workflows_workflow`) cannot be adopted at all because the provider has no import
+for it. Staging is described and not created, because Firestore, Storage and Artifact
+Registry bill at rest.
+
+**Enforced by.** `tests/test_terraform.py` — the Gemini project validation exists, no
+billing resources, no `allUsers`, no secret value in state, the queue service carries no
+model credential, and every import block targets a resource that exists.
+
+---
+
+## 29. Tracing is on in production, and never writes to a file there
+
+**Chosen.** `trace.enabled()` is true when `K_SERVICE` is set. Production spans go to
+stdout as one JSON object each; a laptop still writes to a file. `PRAETOR_TRACE` overrides
+both ways.
+
+**Rejected: leaving it off by default**, which is what #10 chose.
+**Rejected: writing the same JSONL file in production.**
+
+**Why.** This reverses half of #10. Off-by-default was right while the only destination
+was a local file somebody had to ask for. It is wrong for a deployed service: the taint
+label exists to answer *where did this paid value come from* months later, and nobody
+switches tracing on before the incident that needs it.
+
+The second rejection matters more than the first. A Cloud Run filesystem is ephemeral, so
+a file trace is lost with the instance that wrote it — a trace that exists and cannot be
+read, which is worse than none because it looks like coverage. stdout is captured by
+Cloud Logging, retained, and parsed into queryable fields, with no exporter to install.
+
+**What it costs.** Every deployed request now writes span JSON to the log, which is log
+volume that bills. The alternative was a trace nobody could read.
+
+---
+
+## 30. In production, a credential comes from the environment or not at all
+
+**Chosen.** `praetor/agents/reader.py` falls back to a `.env` file on a laptop and refuses
+to when `K_SERVICE` is set, failing loudly with the redeploy command instead.
+
+**Rejected: keeping the file fallback everywhere**, which is simpler and would always
+work.
+
+**Why.** A deployed service reading a key off its own filesystem means the key was baked
+into an image or written to a volume. It then outlives the process, sits in a layer
+somebody can pull, and is invisible to the audit trail Secret Manager keeps. The service
+is given `GOOGLE_API_KEY` from Secret Manager at start, so a missing variable is a
+deployment fault and the right response is to stop, not to search the disk.
+
+**What it costs.** A deployment that forgets `--set-secrets` fails at startup rather than
+degrading. That is the intended direction.
+
+---
+
+## 31. The ERP seam is defined before it is used
+
+**Chosen.** `praetor/erp.py` — four questions as a `Protocol`, with `FileBackedERP`
+reproducing today's behaviour through it. Anything carrying document provenance is
+refused at every entry point.
+
+**Rejected: wiring the kernel through it now.**
+**Rejected: waiting for a real ERP before defining the boundary.**
+
+**Why.** The boundary is the interesting part, and it is the trust boundary rather than an
+integration convenience: everything reachable through the seam is a record the *buyer*
+controls. An adapter answering these questions from the invoice being checked would defeat
+#5, #7 and #12 at once, and the system would keep working while meaning nothing. Writing
+that down as a refusal, with tests, is worth doing before anybody writes the SAP adapter
+rather than after.
+
+Not wiring it through yet is the other half. That change touches code every measured
+number in `FINDINGS.md` depends on, and doing it in the same breath as defining the
+interface would mean neither could be reviewed on its own.
+
+**What it costs.** An interface with one implementation and no callers is speculative
+until it has a second one, and it may need to change when a real ERP arrives.
+`tests/test_erp.py` asserts the kernel does not import it, so the docs cannot start
+implying it does.

@@ -12,7 +12,7 @@ for its reasoning; where they disagree, this file wins.
 
 | | |
 |---|---|
-| Tests | **536 passing tests**, and 506 of them with only `pytest` installed; plus **18** frontend tests including an accessibility pass |
+| Tests | **566 passing tests**, and 534 of them with only `pytest` installed; plus **18** frontend tests including an accessibility pass |
 | Kernel | `praetor/` imports nothing outside the standard library, and nothing from the web layer |
 | Live | https://praetor-836128159455.asia-south1.run.app · `/app` is the three-tab UI |
 | Rules baseline | precision 0.800 · recall 0.963 · **F1 0.874** on 350 invoices, 5 layouts |
@@ -23,9 +23,10 @@ for its reasoning; where they disagree, this file wins.
 | Filter, measured | Model Armor flags **7 of 8** that already failed, **3 of 12** that work |
 | Automation | a PDF in a bucket is a queue entry in **6.45s**, no manual step |
 | The moat | a merged vendor master pays the wrong account **12 of 12**; refusals cross, trust never does |
+| Shippable | infrastructure as code, `0 to destroy`; the queue serves **~170 req/s**, flat under concurrency |
 | Spent to date | about **₹27 of credit**. Money has never been the constraint |
 
-**Phases 1 to 6 are done.** Phase 7 is next.
+**Phases 1 to 7 are done.** Phase 8 is next.
 
 ---
 
@@ -161,12 +162,41 @@ interactive attack demo is not ported; both still work on the plain `/app` page.
 `axe` pass runs under jsdom, which cannot compute colour, so contrast is hand-designed
 and not machine-verified.
 
-## Phase 7 — Actually shippable · **NEXT**
+## Phase 7 — Actually shippable · **DONE**
 
-Infrastructure as code, staging separate from production, secrets out of files, tracing on by
-default, backups and retention, load tests, and the seam where a real ERP plugs in.
+**Infrastructure as code** (`terraform/`): the bucket, both Cloud Run services, Eventarc,
+Workflows, Scheduler, the secret, the APIs and the IAM. Validated, with import blocks that
+adopt the live resources. **Not applied** — and reading the plan is why: the first one
+would have retagged the live queue with the ingest image and changed the ingest service's
+ingress. Current plan is `6 to import, 22 to add, 4 to change, 0 to destroy`.
 
-## Phase 8 — The write-up
+**Staging** is the same code with one variable. Described, not created — Firestore,
+Storage and Artifact Registry bill at rest.
+
+**Secrets out of files:** production refuses to read a credential off its own disk and
+names the redeploy command instead.
+
+**Tracing on by default in production**, and to stdout rather than a file — a Cloud Run
+filesystem is ephemeral, so a file trace is one nobody can read.
+
+**Backups and retention**, scoped to what is actually irreplaceable: the approvals.
+Firestore daily backups kept 7 days; inbox objects deleted at 90 days, versioning on. The
+two retentions are aligned so a backup cannot outlive the deletion policy.
+
+**Load tests:** the queue serves ~170 requests/second and **does not get faster with
+concurrency** — flat from 1 worker to 64, because every request rebuilds the whole queue.
+That is 14 million a day against an analyst doing 300, so it is a ceiling worth knowing
+rather than a problem. Zero failures at every level; the rate limiter refuses 682 requests
+cleanly with `Retry-After` and fails none.
+
+**The ERP seam** (`praetor/erp.py`): four questions as a Protocol, refusing anything that
+carries document provenance. Defined and tested; **the kernel does not use it yet**, and a
+test asserts that so the docs cannot start implying otherwise.
+
+Not done: `google_workflows_workflow` has no import support in the provider, so the live
+sweep cannot be adopted without recreating it. Stated in `terraform/imports.tf`.
+
+## Phase 8 — The write-up · **NEXT**
 
 Release the benchmark that does not exist, fine-tune the local reader, run the adaptive-attack
 evaluation. Phases 3, 6 and 8 together are a publishable piece of work.

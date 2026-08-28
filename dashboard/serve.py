@@ -77,7 +77,15 @@ SECURITY_HEADERS = {
         "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; "
         "form-action 'self'"),
 }
-READ_LIMIT = ratelimit.RateLimiter(limit=120, window=60.0, global_limit=600)
+# Reads per caller per minute. Overridable so `eval/run_load.py` can measure capacity
+# rather than measuring this limiter -- with the default in force a load test just proves
+# the limiter refuses, which is worth knowing and is not a throughput number.
+#
+# The default is the shipped value. Raising it is an explicit act on one process.
+READ_LIMIT = ratelimit.RateLimiter(
+    limit=int(os.environ.get("PRAETOR_READ_LIMIT", "120")),
+    window=60.0,
+    global_limit=int(os.environ.get("PRAETOR_READ_LIMIT_GLOBAL", "600")))
 
 INDEX = ROOT / "dashboard" / "index.html"
 COOKIE = "praetor_session"

@@ -14,6 +14,8 @@
 #   make tenancy    two client companies, shared suppliers, and the refusal network
 #   make queue      what the queue ordering has learned (currently: nothing)
 #   make ingest     the automated front door, offline and free
+#   make load       the deployed surface under concurrent load
+#   make tf-check   the infrastructure as code: format, init, validate
 #   make verify     everything that needs no API key, end to end
 #
 # Targets that spend nothing are the default. The three that call the Gemini API
@@ -23,7 +25,7 @@
 PY := $(shell [ -x .venv/bin/python ] && echo .venv/bin/python || echo python3)
 RUN := PYTHONPATH=. $(PY)
 
-.PHONY: help install test demo verify corpus rules db dashboard serve trace readpath canary pathb app pdf volume attacks adjudicate twopath armor ingest tenancy queue api web web-test diagram clean
+.PHONY: help install test demo verify corpus rules db dashboard serve trace readpath canary pathb app pdf volume attacks adjudicate twopath armor ingest tenancy queue api web web-test load tf-check tf-plan diagram clean
 
 help:
 	@sed -n '2,10p' Makefile | sed 's/^# \?//'
@@ -165,6 +167,26 @@ ingest:
 	    analyse=pipeline.cached_analyser('tests/fixtures/docai_V000_003.json'), \
 	    charge=False); \
 	print(f'action={o.action} codes={o.codes} spans={o.spans} hash={o.doc_hash}')"
+
+# What the deployed surface does under concurrent load. Needs `make api` running in
+# another shell. Raise PRAETOR_READ_LIMIT on that server to measure capacity rather than
+# measuring the rate limiter.
+load:
+	$(RUN) eval/run_load.py --requests $(N)
+
+# ---------------------------------------------------------------- infrastructure
+
+# Everything the cloud runs on, as code. tf-check needs no credentials; tf-plan is read
+# only and talks to the real project. There is deliberately no `apply` target -- read the
+# plan first, every time. See terraform/README.md.
+tf-check:
+	terraform -chdir=terraform fmt -check
+	terraform -chdir=terraform init -backend=false -input=false >/dev/null
+	terraform -chdir=terraform validate
+
+tf-plan: tf-check
+	terraform -chdir=terraform init -input=false >/dev/null
+	terraform -chdir=terraform plan -input=false -lock=false
 
 # ------------------------------------------------------- needs gcloud, costs nothing
 

@@ -58,6 +58,10 @@ def main() -> None:
     ap.add_argument("--out", default="out/adjudication.jsonl")
     ap.add_argument("--delay", type=float, default=3.0)
     ap.add_argument("--limit", type=int)
+    ap.add_argument("--require-rule", action="store_true",
+                    help="turn Rule 4 on (praetor/resolution.py): a resolve stands only "
+                         "if some pre-authorised rule's preconditions actually hold. "
+                         "Off by default because it changes outcomes -- FINDINGS sec 13.")
     ap.add_argument("--models", default="gemini-3.5-flash-lite,gemini-3.5-flash",
                     help="fallback chain; all must be Gemini 3.5+")
     args = ap.parse_args()
@@ -105,7 +109,8 @@ def main() -> None:
         for doc_id, findings, pattern, ctx, amount in flagged:
             if doc_id in done:
                 continue
-            a = adjudicate(findings, pattern, ctx, models=models, invoice_amount=amount)
+            a = adjudicate(findings, pattern, ctx, models=models, invoice_amount=amount,
+                           require_rule=args.require_rule)
             row = {"doc_id": doc_id, "decision": a.decision,
                    "agent_decision": a.agent_decision, "overridden": a.overridden,
                    "override_reason": a.override_reason,
