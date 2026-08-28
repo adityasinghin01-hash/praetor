@@ -1483,3 +1483,117 @@ overclaim it warns about. `learn()` also ignores any finding seen fewer than fiv
 because ranking on one or two decisions is copying the last thing that happened.
 
 This fills as people work the queue. It is a pipe, not a result.
+
+---
+
+## 22. The product surface: one contract, two transports, and a frontend that survives a keyboard
+
+Built 28 Aug 2026. `dashboard/asgi.py`, `web/`. Reproduce: `make web && make api`,
+`make web-test`.
+
+### The transport, swapped rather than rewritten
+
+`docs/PLAN.md` puts the transport before the frontend and gives the reason: a React
+client written against a stdlib `http.server` that cannot page, cannot stream and cannot
+accept a file is a client that gets built twice.
+
+**The JSON contract did not change.** Every response comes from the same pure functions
+in `dashboard/api.py` that `dashboard/serve.py` calls, and
+`test_both_transports_return_the_same_json` issues the same request through both and
+compares the bodies — so "transport swap" fails the build rather than being a claim.
+
+`serve.py` stays, standard library only, because `make demo` running on a laptop with
+nothing installed is worth keeping. FastAPI where it is installed, `http.server` where it
+is not, one contract behind both.
+
+Three capabilities are new, and each carries the constraint that makes it safe:
+
+| | |
+|---|---|
+| **Paging** | A window, never a filter. The unpaged totals are unchanged; a test walks every page and asserts each row appears exactly once, in the same order as unpaged. |
+| **Live updates** | Server-Sent Events carrying a **version marker, never queue content**, so a dropped or partial stream cannot put wrong data on a screen. The worst case is a refresh that does not happen. |
+| **Uploads** | `POST /v1/documents` runs `ingest/pipeline.py` — the same path Eventarc drives. One pipeline, not a second one for documents a person uploads. |
+
+### The frontend
+
+React and TypeScript in `web/`, 152 KB of JavaScript (49 KB gzipped) and 6 KB of CSS.
+It holds no data: it fetches `/v1/*` and renders sentences that arrive already translated
+from `dashboard/language.py`.
+
+Keyboard: `j`/`k` move, `Enter` opens, `/` searches, `Esc` closes. Focus follows the
+cursor, which is what makes the same keys work for a screen reader — the row is focused,
+so it is read out.
+
+**18 frontend tests**, including an `axe-core` pass with zero violations. The ones worth
+naming pin properties that fail quietly rather than loudly:
+
+- **Severity is never carried by colour alone.** Every row states its urgency in words
+  (*Do not pay yet* / *Needs a look*), in a glyph, and in its position. Roughly one man
+  in twelve has some colour vision deficiency, and a control that works for the other
+  eleven is not a control.
+- **The dialog gives the caret back** to the row that opened it. Without that, working a
+  queue by keyboard means starting from the top after every invoice.
+- **The caret cannot leave the dialog** while it is open.
+- **Search filters what is already on screen and fetches nothing**, asserted by counting
+  `fetch` calls — so a search box cannot become a way to ask the server a question
+  somebody else wrote.
+- **No code word reaches the screen**, checked by walking the rendered DOM.
+
+### The language rule, extended and kept in step
+
+The frontend is a new place for English to appear, so it is a new place the rule can
+break. The runtime check lives in the frontend, where it can see what is actually
+rendered. `tests/test_frontend.py` then asserts the two word lists **cannot drift**: a
+word added to `language.FORBIDDEN` that the frontend has never heard of is a guard
+passing vacuously, which this project has now been bitten by twice. Adding a word to
+`FORBIDDEN` and not to the frontend fails the build.
+
+Two details that matter more than they look. The frontend check matches **whole words**,
+mirroring `language.code_words_in` — *Northgate Components Ltd* is a real supplier and
+must not trip a check for `gate`. And an earlier version of the finding-code test matched
+any SCREAMING_CASE token, reporting `PER_PAGE` and `URGENCY` as finding codes; it
+compares against the real `EXPLANATIONS` keys now, because a check that cries wolf is a
+check people learn to override.
+
+### Four defects found by building it
+
+**The real server advertised itself.** The middleware sets `Server: praetor`, but uvicorn
+emits its own `Server: uvicorn` underneath at the protocol layer, so a real response
+carried both — and `dashboard/serve.py` has had a test forbidding exactly that since
+Phase 1. `TestClient` cannot see it. `asgi.run()` sets `server_header=False` so the safe
+configuration is the default rather than a flag to remember, and the test that catches it
+starts a real server on a real socket.
+
+**The queue tests were vacuous.** They ran against tenant `acme` while the store ships
+`acme-industries`, so the app read an empty tenant and every paging assertion passed on
+zero rows. There is a test asserting the queue under test is not empty now — the premise
+checked once instead of assumed five times.
+
+**The queue stole the caret on load.** Focus followed the cursor from mount, which drags a
+screen reader past the heading it was about to read and moves a keyboard user somewhere
+they did not ask to be. Focus follows the cursor only once she has started navigating.
+
+**The amount rendered on the left.** `grid-row: 1 / span 2` without an explicit column let
+auto-placement put the money in column 2 and push the supplier and the sentences into
+column 3. Found by looking at it, which is the only way this class of defect is found —
+every test passed. Explicit `grid-column` now.
+
+A fifth, smaller: the rows were `<button>` elements containing `<p>`. A button may hold
+only phrasing content, so that is non-conforming HTML that can confuse a screen reader
+about where the control begins and ends. `axe` did not flag it. Spans with block layout
+now.
+
+### What this does not claim
+
+**The React app has no sign-in.** `/login` is served by `dashboard/serve.py`, and the
+FastAPI app has no session endpoints, so the new frontend currently depends on a cookie
+established by the old transport. That is a real gap in the product surface and it is
+not closed.
+
+**"What we stopped" is not rebuilt.** The second tab renders a placeholder. Tab 3, the
+interactive attack demo, is not ported at all — both still work on the plain `/app` page.
+
+**No browser-based accessibility audit.** `axe-core` runs under jsdom, which cannot
+compute colour, so the contrast rule is disabled in that pass. The palette was designed
+against WCAG contrast targets by hand and has not been machine-verified in a real
+browser.

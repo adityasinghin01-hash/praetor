@@ -6,6 +6,7 @@
 #   make db         load results into SQLite (tenants, users, approvals)
 #   make serve      the review queue with live approvals (http://127.0.0.1:8000)
 #   make api        the same contract on FastAPI: paging, live updates, uploads
+#   make web        build the React app (needs node); make api then serves it
 #   make trace      run the kernel with tracing on and print one document's spans
 #   make readpath   the real path end to end: reader -> resolver -> rules (free)
 #   make volume     5,000 documents through the kernel: throughput and concurrency
@@ -22,7 +23,7 @@
 PY := $(shell [ -x .venv/bin/python ] && echo .venv/bin/python || echo python3)
 RUN := PYTHONPATH=. $(PY)
 
-.PHONY: help install test demo verify corpus rules db dashboard serve trace readpath canary pathb app pdf volume attacks adjudicate twopath armor ingest tenancy queue api diagram clean
+.PHONY: help install test demo verify corpus rules db dashboard serve trace readpath canary pathb app pdf volume attacks adjudicate twopath armor ingest tenancy queue api web web-test diagram clean
 
 help:
 	@sed -n '2,10p' Makefile | sed 's/^# \?//'
@@ -99,6 +100,16 @@ DOC ?= V014_009
 # adjudications and purchase orders. Approvals are never touched by a re-import.
 db:
 	$(RUN) eval/build_db.py
+
+# The React app. Needs node; `make serve` and its plain /app page do not, which is why
+# both exist. Output goes to web/dist, which is gitignored: it is derived.
+web:
+	cd web && npm install --no-audit --no-fund && npm run build
+	@echo "\nBuilt. `make api` will serve it at http://127.0.0.1:8000/"
+
+# Frontend tests: behaviour, keyboard, and an axe accessibility pass.
+web-test:
+	cd web && npm test
 
 # The FastAPI transport: same JSON as `make serve`, plus paging, live updates and
 # uploads, with OpenAPI at /v1/docs. `make serve` remains the zero-dependency path.

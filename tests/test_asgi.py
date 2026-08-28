@@ -342,3 +342,43 @@ def test_the_real_server_advertises_no_software():
 
     assert servers == ["praetor"], f"the server advertised itself: {servers}"
     assert not any("uvicorn" in v.lower() for v in servers)
+
+
+# ------------------------------------------------------- serving the built app
+
+def test_a_deep_link_reaches_the_app_rather_than_a_404(anonymous):
+    """The client owns its routing. A path the server has never heard of must still
+    open the app, or every shared link is broken."""
+    if not asgi.WEB_DIST.joinpath("index.html").exists():
+        pytest.skip("the web app has not been built; run `make web`")
+    r = anonymous.get("/queue/V000_004")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/html")
+
+
+def test_the_api_still_wins_over_the_app(anonymous):
+    """The catch-all is registered last on purpose. If it ever shadowed /v1, every API
+    call would silently return the HTML shell and the frontend would fail in a way
+    nobody could localise."""
+    r = anonymous.get("/v1/health")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("application/json")
+
+
+def test_an_unbuilt_app_says_so_instead_of_failing_obscurely(anonymous, monkeypatch, tmp_path):
+    """`web/dist` is not committed -- it is derived. So "you have not run the build" is
+    the most likely reason anybody lands here, and it should say that rather than 500."""
+    monkeypatch.setattr(asgi, "WEB_DIST", tmp_path / "nothing")
+    r = anonymous.get("/")
+    assert r.status_code == 503
+    assert "make web" in r.text
+
+
+def test_the_static_route_cannot_walk_out_of_the_build_directory(anonymous):
+    if not asgi.WEB_DIST.joinpath("index.html").exists():
+        pytest.skip("the web app has not been built; run `make web`")
+    for attempt in ("../requirements.txt", "..%2f..%2frequirements.txt",
+                    "assets/../../../etc/passwd"):
+        r = anonymous.get(f"/{attempt}")
+        # Either the app shell or a refusal -- never a file from outside web/dist.
+        assert "google-genai" not in r.text and "root:" not in r.text, attempt

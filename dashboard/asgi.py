@@ -44,17 +44,23 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 import time
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from dashboard import api, ratelimit, serve
-from praetor import store
-
 ROOT = Path(__file__).resolve().parents[1]
+# So `python dashboard/asgi.py` works as well as `PYTHONPATH=. python -m ...`. The
+# Makefile sets the path; a person running the file directly should not have to know
+# that. Same reason ingest/server.py does it.
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from dashboard import api, ratelimit, serve  # noqa: E402
+from praetor import store  # noqa: E402
 
 # One page of a queue. Small enough that a phone renders it quickly, large enough that a
 # day's exceptions are a few pages rather than forty.
@@ -311,6 +317,42 @@ async def upload(file: UploadFile = File(...), who=Depends(session)) -> dict:
 @app.get("/v1/health")
 async def health() -> dict:
     return {"ok": True, "transport": "fastapi", "started": int(time.time())}
+
+
+# ----------------------------------------------------------------------- the app itself
+
+WEB_DIST = ROOT / "web" / "dist"
+
+
+@app.get("/{path:path}")
+async def spa(path: str):
+    """Serve the built React app, and say plainly when it has not been built.
+
+    Registered last, so every `/v1/*` route above wins. Anything else is handed
+    `index.html` -- the client owns its own routing, and a deep link must not 404 just
+    because the server has never heard of that path.
+
+    A missing build returns a sentence rather than a 500 or an empty page. `web/dist` is
+    not committed (it is a derived artifact, and DECISIONS #16 is about what derived
+    artifacts do when they go stale), so "you have not run the build" is the single most
+    likely reason anybody sees this, and it should say so.
+    """
+    from fastapi.responses import FileResponse, PlainTextResponse
+
+    index = WEB_DIST / "index.html"
+    if not index.exists():
+        return PlainTextResponse(
+            "The web app has not been built yet. Run: make web\n"
+            "The plain version, which needs no build step, is served by "
+            "dashboard/serve.py at /app.\n",
+            status_code=503)
+
+    # A real file if it is one, index.html otherwise. `resolve()` and the containment
+    # check are what stop `../` walking out of the build directory.
+    candidate = (WEB_DIST / path).resolve()
+    if path and candidate.is_file() and candidate.is_relative_to(WEB_DIST.resolve()):
+        return FileResponse(candidate)
+    return FileResponse(index)
 
 
 # ----------------------------------------------------------------------- running it

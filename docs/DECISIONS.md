@@ -694,3 +694,70 @@ intended trade.
 **Enforced by.** `tests/test_queueing.py` — the permutation property over generated
 queues and over every small combination of codes and amounts, plus a test that fails if a
 limiting parameter is ever added to `order()`.
+
+---
+
+## 25. Two transports, one contract; the plain one is not deprecated
+
+**Chosen.** `dashboard/asgi.py` on FastAPI, and `dashboard/serve.py` on `http.server`,
+both serving the responses `dashboard/api.py` produces. A test issues the same request
+through both and compares the bodies.
+
+**Rejected: replacing `serve.py`.**
+**Rejected: a mock API for frontend development** — the Vite dev server proxies to the
+real one.
+
+**Why.** The plain transport is standard library only, so `make demo` works on a laptop
+with nothing installed and a judge cloning this repository reaches the queue without a
+package index. That is worth more than the tidiness of having one server.
+
+The second rejection is the same argument as #16 one layer out: a mock is a second
+contract, and the second contract is the one that drifts. `dashboard/api.py` exists
+precisely so there is one place the JSON is defined.
+
+**What it costs.** Two transports to keep in step, which is only affordable because the
+equivalence is a test rather than a discipline. Where they genuinely differ — paging,
+streaming, uploads — the difference is additive: the plain transport returns the same
+body without the `page` block.
+
+---
+
+## 26. A queue may be paged; it may never be shortened
+
+**Chosen.** `/v1/queue` takes `page` and `per_page`. The response always carries the
+unpaged totals and the metadata needed to reach every row.
+
+**Rejected: a default that returns the first page and nothing else**, which is what most
+paged APIs do.
+
+**Why.** #24 refuses to let ordering shorten a queue, because a ranker that can drop an
+item can hide one. Paging is the same power arriving as a convenience: a response that
+returns 25 of 65 rows with no way to know the other 40 exist has hidden them just as
+effectively. So the totals are unpaged and a test walks every page, asserting each row
+appears exactly once and in the unpaged order.
+
+**What it costs.** The server sorts and counts the whole queue on every request, so
+paging saves bytes over the wire and no work behind it. At this size that is the right
+trade; at a size where it is not, the fix is an index, not a cutoff.
+
+---
+
+## 27. Severity reaches the screen as words, a shape and a position — never only a colour
+
+**Chosen.** Every row states its urgency in words, carries a glyph, and is placed by the
+server worst-first. Colour repeats that information; it never carries it alone.
+
+**Rejected: a coloured dot or a coloured left border as the signal**, which is what the
+plain page used and what most queues ship.
+
+**Why.** Roughly one man in twelve has some colour vision deficiency. A control that
+works for the other eleven is not a control, and this one decides whether an analyst
+looks at an invoice before paying it. It also survives a monochrome print, a failing
+screen, and a colour-filtering accessibility setting.
+
+**What it costs.** Every row is a line taller, so fewer fit above the fold. On a queue
+built for the tenth hour of a working day rather than for a screenshot, that is worth
+paying.
+
+**Enforced by.** `web/src/Queue.test.tsx` asserts both urgency words render;
+`tests/test_frontend.py` fails if a severity loses its word form.

@@ -1,0 +1,382 @@
+/*
+  PRAETOR — the review queue.
+
+  Priya reads this for most of a working day, so the design is built for the tenth hour
+  rather than the first screenshot. Three rules it follows:
+
+  1. **Severity is never colour alone.** Every row states its urgency in a word, in its
+     position (worst first, from the server), and in a shape at the start of the row.
+     Roughly one in twelve men has some colour vision deficiency, and a control that
+     only works for the other eleven is not a control.
+  2. **Nothing moves unless she moved it.** No auto-dismissing toasts, no animated
+     re-sorting under the cursor. The queue changes when she asks it to.
+  3. **Text stays put as it grows.** Every size is in rem, so browser zoom and an OS
+     font-size setting both work.
+*/
+
+:root {
+  color-scheme: dark;
+
+  --bg: #0d1117;
+  --panel: #151b23;
+  --panel-2: #1b232d;
+  --line: #262e3a;
+  --line-strong: #39424f;
+
+  --tx: #e9eef5;
+  --tx-dim: #9aa7b8;
+  --tx-faint: #6d7887;
+
+  --accent: #6cb6ff;
+  --accent-ink: #04121f;
+
+  /* Severity. Each is paired with a word and a glyph in the markup -- never alone. */
+  --stop: #ff7b72;
+  --stop-bg: #2a1517;
+  --check: #e3b341;
+  --check-bg: #262013;
+  --ok: #57d364;
+
+  --radius: 10px;
+  --radius-sm: 7px;
+  --gap: 1rem;
+
+  --font: ui-sans-serif, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.22);
+}
+
+/* Respect a light preference rather than forcing a dark room. */
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --bg: #ffffff;
+    --panel: #f7f9fc;
+    --panel-2: #eef2f7;
+    --line: #d8dee7;
+    --line-strong: #b8c2cf;
+    --tx: #131a22;
+    --tx-dim: #4d5866;
+    --tx-faint: #6b7684;
+    --accent: #0b62c4;
+    --accent-ink: #ffffff;
+    --stop: #b21f14;
+    --stop-bg: #fdf0ef;
+    --check: #7a5300;
+    --check-bg: #fdf6e3;
+    --ok: #106a2b;
+    --shadow: 0 1px 2px rgb(16 24 40 / 0.06), 0 8px 24px rgb(16 24 40 / 0.08);
+  }
+}
+
+* { box-sizing: border-box; }
+
+html { font-size: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--tx);
+  font: 1rem/1.55 var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Nobody should ever lose the caret. A visible focus ring is not decoration. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Rule 2, honoured for anyone who has asked the OS for it. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* --------------------------------------------------------------- skip link */
+
+.skip {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  background: var(--accent);
+  color: var(--accent-ink);
+  padding: 0.6rem 1rem;
+  border-radius: 0 0 var(--radius-sm) 0;
+  z-index: 100;
+  font-weight: 600;
+}
+.skip:focus { left: 0; }
+
+/* --------------------------------------------------------------- shell */
+
+.shell { min-height: 100vh; display: flex; flex-direction: column; }
+
+.masthead {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+  padding: 0.9rem 1.25rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  flex-wrap: wrap;
+}
+
+.wordmark {
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  margin: 0;
+}
+
+.tabs { display: flex; gap: 0.25rem; margin-left: auto; flex-wrap: wrap; }
+
+.tab {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--tx-dim);
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.tab:hover { color: var(--tx); background: var(--panel-2); }
+.tab[aria-current="page"] {
+  color: var(--tx);
+  background: var(--panel-2);
+  border-color: var(--line-strong);
+  font-weight: 600;
+}
+
+main { flex: 1; padding: 1.25rem; max-width: 68rem; width: 100%; margin: 0 inline; }
+
+/* --------------------------------------------------------------- summary */
+
+.summary { margin: 0 0 1.25rem; }
+
+.headline {
+  margin: 0 0 0.35rem;
+  font-size: 1.35rem;
+  line-height: 1.3;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.throughput { margin: 0; color: var(--tx-dim); font-size: 0.95rem; }
+
+/* --------------------------------------------------------------- controls */
+
+.controls {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.search {
+  flex: 1 1 16rem;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--tx);
+  font: inherit;
+  padding: 0.55rem 0.75rem;
+}
+.search::placeholder { color: var(--tx-faint); }
+
+/* --------------------------------------------------------------- the queue */
+
+.queue { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.6rem; }
+
+.row {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--line-strong);
+  border-radius: var(--radius);
+  padding: 0.9rem 1rem;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.35rem 0.85rem;
+  align-items: start;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  width: 100%;
+}
+.row:hover { border-color: var(--line-strong); background: var(--panel-2); }
+.row[aria-current="true"] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.row.stop { border-left-color: var(--stop); }
+.row.check { border-left-color: var(--check); }
+
+/* The glyph. Rule 1: shape carries the same information as the colour. */
+.mark {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.85rem;
+  font-weight: 700;
+  flex: none;
+}
+.stop .mark { background: var(--stop-bg); color: var(--stop); }
+.check .mark { background: var(--check-bg); color: var(--check); }
+
+.row-main { grid-column: 2; min-width: 0; }
+
+.urgency, .supplier, .wrong, .todo { display: block; }
+
+.supplier {
+  font-weight: 650;
+  font-size: 1rem;
+  margin: 0 0 0.15rem;
+  overflow-wrap: anywhere;
+}
+
+.wrong { margin: 0 0 0.3rem; color: var(--tx); }
+.todo { margin: 0; color: var(--tx-dim); font-size: 0.93rem; }
+
+.urgency {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.stop .urgency { color: var(--stop); }
+.check .urgency { color: var(--check); }
+
+.money {
+  /* Explicit, not auto-placed. Without the column, `grid-row: 1 / span 2` put the
+     amount in column 2 and pushed the supplier and the sentences into column 3 -- the
+     money rendered on the left, where the eye does not look for it. */
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.money .ccy { display: block; font-size: 0.75rem; color: var(--tx-faint); font-weight: 500; }
+
+/* --------------------------------------------------------------- detail */
+
+.detail-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 0.55);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  z-index: 50;
+}
+
+.detail {
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  width: min(40rem, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  padding: 1.35rem 1.5rem;
+}
+
+.detail h2 { margin: 0 0 0.2rem; font-size: 1.2rem; }
+.detail dl { display: grid; grid-template-columns: auto 1fr; gap: 0.4rem 1rem; margin: 1rem 0; }
+.detail dt { color: var(--tx-dim); font-size: 0.9rem; }
+.detail dd { margin: 0; }
+
+.callout {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 0.8rem 0.9rem;
+  margin: 1rem 0;
+}
+.callout p { margin: 0 0 0.3rem; }
+.callout p:last-child { margin: 0; }
+.phone { font-family: var(--mono); font-size: 1.05rem; }
+.phone-source { color: var(--tx-faint); font-size: 0.85rem; }
+
+.actions { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-top: 1.25rem; }
+
+.btn {
+  font: inherit;
+  padding: 0.55rem 1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-strong);
+  background: var(--panel-2);
+  color: var(--tx);
+  cursor: pointer;
+}
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+
+/* --------------------------------------------------------------- paging */
+
+.paging {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+  flex-wrap: wrap;
+}
+.paging .where { color: var(--tx-dim); font-size: 0.92rem; }
+
+/* --------------------------------------------------------------- states */
+
+.state { padding: 2.5rem 1rem; text-align: center; color: var(--tx-dim); }
+.state.error { color: var(--stop); }
+
+.shortcuts {
+  margin-top: 2rem;
+  color: var(--tx-faint);
+  font-size: 0.85rem;
+  border-top: 1px solid var(--line);
+  padding-top: 0.9rem;
+}
+kbd {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  background: var(--panel-2);
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 0.1rem 0.35rem;
+}
+
+/* Announced to screen readers, invisible on screen. */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --------------------------------------------------------------- phones */
+
+@media (max-width: 34rem) {
+  main { padding: 1rem 0.85rem; }
+  .row { grid-template-columns: auto 1fr; }
+  .money { grid-row: auto; grid-column: 2; text-align: left; }
+  .money .ccy { display: inline; margin-left: 0.35rem; }
+  .headline { font-size: 1.15rem; }
+  /* A tap target smaller than this is a mis-tap on a phone. */
+  .btn, .tab { min-height: 2.75rem; }
+}

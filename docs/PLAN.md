@@ -12,7 +12,7 @@ for its reasoning; where they disagree, this file wins.
 
 | | |
 |---|---|
-| Tests | **528 passing tests**, and 502 of them with only `pytest` installed |
+| Tests | **536 passing tests**, and 506 of them with only `pytest` installed; plus **18** frontend tests including an accessibility pass |
 | Kernel | `praetor/` imports nothing outside the standard library, and nothing from the web layer |
 | Live | https://praetor-836128159455.asia-south1.run.app · `/app` is the three-tab UI |
 | Rules baseline | precision 0.800 · recall 0.963 · **F1 0.874** on 350 invoices, 5 layouts |
@@ -25,7 +25,7 @@ for its reasoning; where they disagree, this file wins.
 | The moat | a merged vendor master pays the wrong account **12 of 12**; refusals cross, trust never does |
 | Spent to date | about **₹27 of credit**. Money has never been the constraint |
 
-**Phases 1 to 5 are done.** Phase 6 is next.
+**Phases 1 to 6 are done.** Phase 7 is next.
 
 ---
 
@@ -133,14 +133,35 @@ can drop an item can hide one. It has learned **nothing**, because the record ho
 human decisions, and `make queue` prints that in those words rather than implying a
 ranking. The pipe is built; the water is not claimed.
 
-## Phase 6 — The product surface · **NEXT**
+## Phase 6 — The product surface · **DONE**
 
-FastAPI first — paging, live updates, uploads — because the frontend gets built twice
-otherwise. The JSON contract in `dashboard/api.py` does not change, so it is a transport swap.
-Then the real frontend: React and TypeScript, keyboard and screen-reader access, phones, and
-the visual design deliberately deferred to here.
+**FastAPI first**, as the plan required, and the swap is provable:
+`test_both_transports_return_the_same_json` issues the same request through
+`dashboard/serve.py` and `dashboard/asgi.py` and compares. `serve.py` stays, standard
+library only, so `make demo` still runs with nothing installed. Paging is a window and
+never a filter; live updates stream a version marker and never content; uploads run the
+same `ingest/pipeline.py` Eventarc drives.
 
-## Phase 7 — Actually shippable
+**Then the frontend.** React and TypeScript in `web/`, 49 KB gzipped, holding no data of
+its own. `j`/`k` move, `Enter` opens, `/` searches, `Esc` closes, and focus follows the
+cursor so the same keys work for a screen reader. 18 frontend tests including an
+`axe-core` pass with zero violations. Severity reaches the screen as words, a shape and a
+position — never colour alone.
+
+The language rule now covers the frontend, and the two word lists cannot drift: adding a
+word to `language.FORBIDDEN` without adding it to the frontend check fails the build.
+
+Building it found four defects, and one of them only a screenshot could find: the amount
+rendered in the wrong column because `grid-row` without an explicit `grid-column` let
+auto-placement move it. Every test passed. See `FINDINGS.md` §22.
+
+**Not done, and stated rather than implied:** the React app has no sign-in — it depends
+on a cookie the old transport establishes. "What we stopped" is a placeholder and the
+interactive attack demo is not ported; both still work on the plain `/app` page. And the
+`axe` pass runs under jsdom, which cannot compute colour, so contrast is hand-designed
+and not machine-verified.
+
+## Phase 7 — Actually shippable · **NEXT**
 
 Infrastructure as code, staging separate from production, secrets out of files, tracing on by
 default, backups and retention, load tests, and the seam where a real ERP plugs in.
