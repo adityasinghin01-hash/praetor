@@ -307,6 +307,21 @@ field type, an unseen layout — escalates rather than pays. Zero false positive
 synthetic corpus with clean labels is also a soft number; on real documents it will not
 be zero, and that is the figure to re-measure once §9 is closed.
 
+**Correction (28 Aug): "unusual labelling" turned out to include Document AI's normal
+labelling, and it cost 100%.** The allowlist is written in the DocILE vocabulary
+(`payment_iban`). Document AI calls the same thing `supplier_iban`. So on the only path
+that reads real PDFs, this check compared two vocabularies, matched nothing, and raised
+`IMPOSSIBLE_ORIGIN` on every correctly extracted account. Phase 2 scored fields
+extracted, not origins, so nothing caught it — and a test asserted the raw
+`"supplier_iban"`, agreeing with the code while both were wrong.
+
+The fix is in the adapter, not here: `docai_adapter.SPAN_KIND_MAP` translates into the
+vocabulary the kernel speaks. **This file keeps one vocabulary and each adapter learns
+it**, because an allowlist holding the union of every vendor's labels grows an entry per
+adapter, and the entry nobody remembers to add is the one that silently changes
+behaviour. An unmapped kind stays unmapped and therefore still fails closed.
+[FINDINGS §20](../FINDINGS.md).
+
 ---
 
 ## 14. A decision must point at a rule that verifies
@@ -497,3 +512,86 @@ is the direct price of refusing to break ties.
 **Enforced by.** `tests/test_corroboration.py` asserts over every combination of inputs
 that `escalates` is false exactly when the two paths named the same span, and that the
 outcome object exposes nothing resembling an approval.
+
+---
+
+## 20. Automation calls the kernel; the kernel does not know it exists
+
+**Chosen.** Everything that orchestrates lives in `ingest/`: fetching an object, calling
+Document AI, writing the outcome, handling an event. `praetor/` is called by it and
+imports nothing from it. The deployed pipeline's ceiling is `PROPOSE_PAY`, so a document
+that arrives with nobody watching cannot end in a payment.
+
+**Rejected: a `praetor/pipeline.py`.** The orchestration is the obvious thing to put next
+to the code it orchestrates.
+**Rejected: reading Document AI's own field values into the record**, which is the
+shortest path to an automated pipeline and would have deleted the point of it.
+
+**Why.** The kernel's claim is that the security-critical path is small and
+dependency-free, and that survives only if the convenient thing keeps living outside it.
+Orchestration makes network calls, reads clocks, spends money and knows what Eventarc is
+— none of which should ever be in the file a judge is asked to read.
+
+The second rejection matters more. `docai_adapter.to_record()` reads each entity's
+`mentionText` and says in its own docstring that it is a reference for scoring rather
+than how a value reaches a payment. Wiring it into the gate would have automated the
+pipeline by removing the grounding guarantee the pipeline exists for — the fastest
+possible way to ship something that looks finished and is hollow. With no reader
+configured the pipeline escalates instead, which is honest about there being no
+extraction.
+
+**What it costs.** One more package, and a pipeline that must be exercised through
+injected callables to be testable without credentials. `ingest/pipeline.py` takes
+`analyse` and `read` as parameters purely so the whole path runs in CI on a saved
+response — a test of an ingestion pipeline that only runs against live infrastructure is
+a test that does not run.
+
+**Enforced by.** `tests/test_ingest.py`: an AST scan for `praetor/` importing `ingest`;
+`ingest` evicted from `sys.modules` with `__import__` monkeypatched to raise, so a lazy
+import inside a function fails too; and the same document put through `pipeline.decide()`
+directly and through the whole pipeline, asserting every field of the outcome matches.
+
+---
+
+## 21. A pipeline that spends money must be idempotent and must remember what it spent
+
+**Chosen.** One claim per GCS object *generation*, written in a Firestore transaction
+**before** Document AI is called. And a spend ledger that survives a cold start: the
+backend is injectable, `ingest/ledger.py` installs a Firestore one, and the service
+**exits** rather than starting without it.
+
+**Rejected: relying on the event being delivered once.**
+**Rejected: keeping the ledger in a file on Cloud Run**, which is what the code did.
+**Rejected: recording the spend and checking the ceiling afterwards.**
+
+**Why.** Both were measured, and both cost money the same afternoon
+([FINDINGS §20](../FINDINGS.md)).
+
+A malformed response — `Content-Length` with no body — made Cloud Run return 502 while
+the service's own log said 204. Eventarc redelivered nine times, and every delivery had
+already called Document AI, so one invoice was billed four times before anyone read the
+status codes. The 502 was a bug and is fixed; **redelivery is not a bug**, it is
+at-least-once delivery working as specified. A pipeline that spends per document and is
+woken by a file landing in a bucket is a way to bill an account in a loop, and it took an
+ordinary mistake rather than an attacker to find it.
+
+The ledger is the same shape of problem one layer down. A container filesystem is
+ephemeral, so the running total reset on every cold start and the ceiling protecting a
+live billing account silently returned to full — DECISIONS #8's failure mode, reached by
+a different road. The same recorded spend reads Rs 2.64 from Firestore and **Rs 0.00**
+from a file on a fresh instance.
+
+The claim goes before the spend deliberately. A crash after claiming loses a document,
+which a person can see and re-upload; a crash before claiming charges twice, which nobody
+sees.
+
+**What it costs.** A Firestore write per object before any work, so the pipeline cannot
+run at all without Firestore reachable — that is now a hard startup dependency, chosen
+over the alternative of a ceiling that forgets. And there are currently **two ledgers**,
+local and cloud, so the Rs 10 ceiling is enforced twice against one bill. That is the
+inconsistency `record_pages` was written to avoid, and it is stated in FINDINGS rather
+than tidied away.
+
+**Enforced by.** `tests/test_ingest.py` — the claim precedes the paid path, an already
+claimed object never reaches it, no response is sent without a body, and the service
+raises `SystemExit` when no durable ledger installs.

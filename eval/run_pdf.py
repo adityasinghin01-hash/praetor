@@ -102,7 +102,12 @@ def main() -> None:
         print(f"{pdf.name} -> Document AI in {elapsed:.2f}s, {pages} page(s)\n")
 
     # ---- the front door: a real file becomes spans
-    doc_hash = f"docai:{abs(hash(json.dumps(document, sort_keys=True))) % 16**12:012x}"
+    #
+    # The hash was `abs(hash(json.dumps(...)))`, which is salted per process: the same
+    # invoice produced a different doc_hash on every run. Harmless while it was only
+    # printed; not harmless now that ingest/ writes it into a record a person audits
+    # later. sha256, the same as the annotation path has always used.
+    doc_hash = "docai:" + docai_adapter.content_hash(document)
     spans = docai_adapter.spans_of(document)
     kinds = docai_adapter.span_kinds_of(document)
     reference = docai_adapter.to_record(document, doc_hash, pdf.stem)

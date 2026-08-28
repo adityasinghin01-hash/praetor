@@ -114,7 +114,7 @@ The principle is that the model handles references, never values.
 8. A human approves — one act that is both the SOX segregation-of-duties control and the
    declassification step.
 
-445 tests hold those claims. Approving as an agent raises PermissionError, in the tests
+466 tests hold those claims. Approving as an agent raises PermissionError, in the tests
 and in the live queue.
 ```
 
@@ -165,7 +165,7 @@ imports nothing outside the standard library and contains no domain vocabulary, 
 them run it on a medical record and a contract to show the point rather than argue it.
 
 And that the whole thing reproduces from a clean clone with no API key, no cloud account
-and no billing: `make install && make demo` gives 445 passing tests, the rules baseline,
+and no billing: `make install && make demo` gives 466 passing tests, the rules baseline,
 and the full review queue.
 ```
 
@@ -221,7 +221,7 @@ Requires Python 3.11 or newer and make. No API key, no cloud account, no billing
     make demo
 
 make demo runs in about ten seconds, makes no network calls, and costs nothing. Expect
-445 passing tests, the rules baseline at precision 0.800 / recall 0.963 / F1 0.874, and
+466 passing tests, the rules baseline at precision 0.800 / recall 0.963 / F1 0.874, and
 dashboard/index.html — the queue a human actually works.
 
 Python 3.11 or newer. Verified from a clean clone on 3.13.14 and 3.14.6 on 27 Aug.

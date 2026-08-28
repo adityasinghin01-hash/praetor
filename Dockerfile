@@ -1,7 +1,13 @@
-# PRAETOR on Cloud Run.
+# PRAETOR on Cloud Run. One image, two services.
 #
-# The image carries the review queue and nothing that calls a model: adjudication is an
-# offline script, so a deployed instance cannot burn API quota or spend money.
+#   dashboard/serve.py   the review queue          (default CMD)
+#   ingest/server.py     the Eventarc ingest path  (deployed with --command/--args)
+#
+# The queue carries nothing that calls a model: adjudication is an offline script, so a
+# deployed queue instance cannot burn API quota or spend money. That property is
+# unchanged and still worth having, which is why the ingest path is a SEPARATE service
+# rather than a route added to this one -- ingestion does spend, per page, and the two
+# should not share a blast radius.
 #
 # State must be Firestore here. Cloud Run containers have an ephemeral filesystem, so a
 # SQLite file would vanish on every cold start -- which is exactly why the store was put
@@ -21,6 +27,7 @@ RUN pip install --no-cache-dir -r requirements.txt google-cloud-firestore
 
 COPY praetor/ praetor/
 COPY dashboard/ dashboard/
+COPY ingest/ ingest/
 COPY eval/ eval/
 COPY data/ data/
 COPY results/ results/

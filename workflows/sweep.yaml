@@ -1,0 +1,107 @@
+# PRAETOR — the reconciliation sweep.
+#
+#   Cloud Scheduler (daily) -> Workflows (this) -> Cloud Run (praetor-ingest)
+#
+# Eventarc delivers at-least-once, which is a guarantee about duplicates and NOT a
+# guarantee about drops: an event can be lost while a bucket write succeeds, and the
+# document would then sit in the inbox forever with nobody looking at it. This walks the
+# bucket and offers every PDF to the ingest service.
+#
+# It is safe to run repeatedly because the service is idempotent, not because this is
+# careful. `ingest/server.py::claim` takes one claim per object *generation* inside a
+# Firestore transaction, so a document that has already been processed is answered
+# "skipped" without Document AI being called and without a page being billed. The sweep
+# is therefore cheap by construction: its cost is one HTTP call per object, and only
+# genuinely new documents cost money.
+#
+# Deploy:
+#   gcloud workflows deploy praetor-sweep --source=workflows/sweep.yaml \
+#     --location=asia-south1 --project=praetor-run-2026 \
+#     --service-account=836128159455-compute@developer.gserviceaccount.com
+main:
+  params: [args]
+  steps:
+    - setup:
+        assign:
+          - bucket: ${default(map.get(args, "bucket"), "praetor-inbox-2026")}
+          - ingest: ${default(map.get(args, "ingest"), "https://praetor-ingest-836128159455.asia-south1.run.app/")}
+          - seen: 0
+          - processed: 0
+          - skipped: 0
+          - failed: 0
+          - pageToken: null
+
+    # Cloud Storage paginates. A sweep that reads only the first page is a sweep that
+    # quietly stops reconciling once the bucket grows, which is worse than no sweep.
+    - listPage:
+        call: googleapis.storage.v1.objects.list
+        args:
+          bucket: ${bucket}
+          pageToken: ${pageToken}
+        result: listing
+
+    - handleObjects:
+        for:
+          value: object
+          in: ${default(map.get(listing, "items"), [])}
+          steps:
+            - countIt:
+                assign:
+                  - seen: ${seen + 1}
+            - onlyPdfs:
+                switch:
+                  - condition: ${not(text.match_regex(object.name, "(?i)\\.pdf$"))}
+                    next: continue
+            - offerToIngest:
+                try:
+                  call: http.post
+                  args:
+                    url: ${ingest}
+                    auth:
+                      type: OIDC
+                      audience: ${ingest}
+                    body:
+                      bucket: ${object.bucket}
+                      name: ${object.name}
+                      generation: ${object.generation}
+                  result: response
+                except:
+                  as: e
+                  steps:
+                    - countFailure:
+                        assign:
+                          - failed: ${failed + 1}
+                    - moveOn:
+                        next: continue
+            - tally:
+                switch:
+                  # The service answers "skipped" for an object version it has already
+                  # claimed. That is the normal answer on every run after the first.
+                  - condition: ${"skipped" in response.body}
+                    steps:
+                      - countSkip:
+                          assign:
+                            - skipped: ${skipped + 1}
+                  - condition: true
+                    steps:
+                      - countProcessed:
+                          assign:
+                            - processed: ${processed + 1}
+
+    - morePages:
+        switch:
+          - condition: ${map.get(listing, "nextPageToken") != null}
+            steps:
+              - advance:
+                  assign:
+                    - pageToken: ${listing.nextPageToken}
+              - again:
+                  next: listPage
+
+    - done:
+        return:
+          bucket: ${bucket}
+          objects_seen: ${seen}
+          newly_processed: ${processed}
+          already_done: ${skipped}
+          failed: ${failed}

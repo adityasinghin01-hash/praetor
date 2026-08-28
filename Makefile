@@ -9,6 +9,7 @@
 #   make readpath   the real path end to end: reader -> resolver -> rules (free)
 #   make volume     5,000 documents through the kernel: throughput and concurrency
 #   make pathb      fit the second extraction path, then try to break it
+#   make ingest     the automated front door, offline and free
 #   make verify     everything that needs no API key, end to end
 #
 # Targets that spend nothing are the default. The three that call the Gemini API
@@ -18,7 +19,7 @@
 PY := $(shell [ -x .venv/bin/python ] && echo .venv/bin/python || echo python3)
 RUN := PYTHONPATH=. $(PY)
 
-.PHONY: help install test demo verify corpus rules db dashboard serve trace readpath canary pathb app pdf volume attacks adjudicate twopath armor diagram clean
+.PHONY: help install test demo verify corpus rules db dashboard serve trace readpath canary pathb app pdf volume attacks adjudicate twopath armor ingest diagram clean
 
 help:
 	@sed -n '2,10p' Makefile | sed 's/^# \?//'
@@ -124,6 +125,15 @@ adjudicate:
 # spans of the same document. 100 model calls, about Rs 8. Resumable.
 twopath:
 	$(RUN) eval/run_twopath.py --delay 2
+
+# The automated front door, run locally on a saved Document AI response: no network,
+# no credentials, no charge. This is the exact path the Cloud Run ingest service runs.
+ingest:
+	$(RUN) -c "from ingest import pipeline; \
+	o = pipeline.process(b'', 'V000_003', \
+	    analyse=pipeline.cached_analyser('tests/fixtures/docai_V000_003.json'), \
+	    charge=False); \
+	print(f'action={o.action} codes={o.codes} spans={o.spans} hash={o.doc_hash}')"
 
 # ------------------------------------------------------- needs gcloud, costs nothing
 

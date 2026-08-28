@@ -46,6 +46,39 @@ class BudgetExceeded(RuntimeError):
     """Raised before a call that would push spend past the ceiling."""
 
 
+# --------------------------------------------------------------------------- the ledger
+#
+# Where the running total lives. The default is the file below, which is right for a
+# laptop and wrong for Cloud Run: a container filesystem is ephemeral, so a ledger
+# written there resets on every cold start and the ceiling protecting a live billing
+# account quietly becomes infinite. That is DECISIONS #8's failure mode exactly -- a
+# control that fails open in the situation it exists for -- and automation is what makes
+# it reachable, because a pipeline woken by a file landing in a bucket spends money with
+# nobody watching.
+#
+# So the backend is injectable. `ingest/ledger.py` installs a Firestore-backed one for
+# the deployed service; this module stays standard-library only and knows nothing about
+# any of it.
+_LEDGER = None
+
+
+def use_ledger(ledger) -> None:
+    """Install a durable ledger. Must provide `lock()`, `read()` and `write(dict)`.
+
+    `read()` returns None when nothing has been recorded yet, and raises for a ledger
+    that exists but cannot be read -- the same distinction the file backend draws, and
+    for the same reason: "nothing spent" and "the ledger is damaged" mean opposite
+    things.
+    """
+    global _LEDGER
+    _LEDGER = ledger
+
+
+def ledger_name() -> str:
+    """What the ceiling is actually being kept in. Printed, so it cannot be assumed."""
+    return "file" if _LEDGER is None else type(_LEDGER).__name__
+
+
 class CorruptSpendFile(RuntimeError):
     """The ledger exists but cannot be read. Refuse to spend until a person looks."""
 
@@ -56,6 +89,7 @@ class Spend:
     calls: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
+    pages: int = 0          # Document AI pages, which are priced per page, not per token
 
     @property
     def inr(self) -> float:
@@ -63,12 +97,23 @@ class Spend:
 
 
 def _load() -> Spend:
-    """Read the ledger. A missing file means zero; an unreadable one means STOP.
+    """Read the ledger. A missing one means zero; an unreadable one means STOP.
 
     The distinction is the whole point. "No ledger yet" and "the ledger is damaged" look
     similar and mean opposite things, and conflating them is how a spending ceiling
     silently disappears.
     """
+    if _LEDGER is not None:
+        raw = _LEDGER.read()
+        if raw is None:
+            return Spend()
+        try:
+            return Spend(**raw)
+        except Exception as e:  # noqa: BLE001
+            raise CorruptSpendFile(
+                f"the installed ledger returned something unreadable ({e}). "
+                f"Refusing to spend.") from e
+
     if not SPEND_FILE.exists():
         return Spend()
     try:
@@ -83,7 +128,15 @@ def _load() -> Spend:
 
 
 def _save(s: Spend) -> None:
+    if _LEDGER is not None:
+        _LEDGER.write(dict(s.__dict__))
+        return
     write_json_atomic(SPEND_FILE, s.__dict__)
+
+
+def _held():
+    """The lock for whichever ledger is installed."""
+    return _LEDGER.lock() if _LEDGER is not None else locked(SPEND_FILE)
 
 
 def price(model: str, in_tok: int, out_tok: int) -> float:
@@ -93,7 +146,7 @@ def price(model: str, in_tok: int, out_tok: int) -> float:
 
 def check(model: str, prompt_chars: int, expected_out_tokens: int = 100) -> None:
     """Refuse the call if it would cross the ceiling. Call BEFORE spending."""
-    with locked(SPEND_FILE):
+    with _held():
         s = _load()
     projected = s.usd + price(model, int(prompt_chars / 3.5), expected_out_tokens)
     if projected * USD_PER_INR > CEILING_INR:
@@ -111,7 +164,7 @@ def record(model: str, in_tok: int, out_tok: int) -> Spend:
     the same total and one would overwrite the other, undercounting spend in exactly the
     situation -- parallel work -- where the ceiling matters most.
     """
-    with locked(SPEND_FILE):
+    with _held():
         s = _load()
         s.usd += price(model, in_tok, out_tok)
         s.calls += 1
@@ -121,13 +174,47 @@ def record(model: str, in_tok: int, out_tok: int) -> Spend:
         return s
 
 
+def check_pages(pages: int, usd_per_page: float) -> None:
+    """Refuse a page-priced call that would cross the ceiling. Call BEFORE spending.
+
+    Document AI has no free tier, so an automated pipeline triggered by a file landing in
+    a bucket is a way to spend money without a person deciding to. That makes the ceiling
+    load-bearing rather than a convenience: anyone who can write to the bucket can
+    otherwise write to the bill.
+    """
+    with _held():
+        s = _load()
+    projected = s.usd + pages * usd_per_page
+    if projected * USD_PER_INR > CEILING_INR:
+        raise BudgetExceeded(
+            f"would reach Rs {projected * USD_PER_INR:.2f}, ceiling is Rs "
+            f"{CEILING_INR:.2f}. Already spent Rs {s.inr:.2f}. "
+            f"Raise it deliberately with PRAETOR_BUDGET_INR=<amount> if you mean to.")
+
+
+def record_pages(pages: int, usd_per_page: float) -> Spend:
+    """Record actual page usage after a call. Same lock and same ledger as tokens.
+
+    One ledger for every kind of spend, because two ledgers with two ceilings is two
+    ways to be under budget while over budget.
+    """
+    with _held():
+        s = _load()
+        s.usd += pages * usd_per_page
+        s.calls += 1
+        s.pages += pages
+        _save(s)
+        return s
+
+
 def report() -> str:
     try:
         s = _load()
     except CorruptSpendFile as e:
         return f"SPEND LEDGER UNREADABLE -- all calls refused. {e}"
+    pages = f" / {s.pages} page(s)" if s.pages else ""
     return (f"spent Rs {s.inr:.2f} (${s.usd:.4f}) over {s.calls} calls  "
-            f"[{s.input_tokens:,} in / {s.output_tokens:,} out]  "
+            f"[{s.input_tokens:,} in / {s.output_tokens:,} out{pages}]  "
             f"ceiling Rs {CEILING_INR:.2f}")
 
 

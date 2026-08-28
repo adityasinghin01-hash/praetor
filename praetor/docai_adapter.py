@@ -52,6 +52,9 @@ dependency and lives outside the kernel; this file only ever sees parsed JSON.
 """
 from __future__ import annotations
 
+import hashlib
+import json
+
 from praetor.docile_adapter import _span_id
 from praetor.types import Field, InvoiceRecord, Provenance
 
@@ -74,7 +77,31 @@ FIELD_MAP: dict[str, str] = {
 NEVER_MAPPED: frozenset[str] = frozenset({
     "receiver_name", "receiver_address", "receiver_tax_id", "ship_to_name",
     "ship_to_address", "remit_to_name", "remit_to_address",
+    # The buyer's own account. Never a destination for the buyer's own payment, and
+    # listed here so that "we never mapped it" is a decision rather than an oversight.
+    "receiver_iban",
 })
+
+# Document AI's span vocabulary -> the one the kernel speaks.
+#
+# This is not cosmetic, and its absence was a live defect. `praetor/canary.py` allows a
+# bank account to come from a span the document labels `payment_iban`, which is the
+# DocILE vocabulary `praetor/docile_adapter.py` emits. Document AI calls the same thing
+# `supplier_iban`, so on the Document AI path every clean invoice tripped
+# IMPOSSIBLE_ORIGIN -- a 100% false-positive rate on the only path that reads real PDFs.
+# Phase 2 measured fields extracted, not origins, so nothing caught it.
+#
+# The translation belongs here rather than in the kernel. A canary holding a union of
+# every vendor's vocabulary grows a new entry per adapter, and the entry nobody
+# remembers to add is the one that silently changes behaviour. One vocabulary in the
+# kernel; each adapter speaks it.
+#
+# An unmapped kind passes through unchanged and therefore does NOT satisfy the
+# allowlist, so a payment field this map has not learned escalates rather than paying.
+# That is the right direction to be wrong in, and it is why this map may stay short.
+SPAN_KIND_MAP: dict[str, str] = {
+    "supplier_iban": "payment_iban",
+}
 
 
 def _text(document: dict, layout: dict) -> str:
@@ -144,6 +171,9 @@ def span_kinds_of(document: dict) -> dict[str, str]:
     'other' is the honest label for a line no entity claims, and it is what
     `praetor/canary.py` treats as prose. Read the module docstring on what that label is
     now worth: it comes from a model, not from ground truth.
+
+    Types are translated through `SPAN_KIND_MAP` into the vocabulary the kernel speaks,
+    so the canary compares like with like. See that map for what went wrong without it.
     """
     entities = _entity_kinds(document)
     kinds: dict[str, str] = {}
@@ -162,8 +192,25 @@ def span_kinds_of(document: dict) -> dict[str, str]:
                         break
                 if kind != "other":
                     break
-            kinds[_span_id(number, bbox)] = kind
+            kinds[_span_id(number, bbox)] = SPAN_KIND_MAP.get(kind, kind)
     return kinds
+
+
+def content_hash(document: dict) -> str:
+    """A stable fingerprint of a parsed document.
+
+    `eval/run_pdf.py` built this with Python's built-in `hash()`, which is salted per
+    process: the same invoice produced a different `doc_hash` on every run. That is
+    harmless for a script that prints it once and fatal for the thing it is for --
+    DECISIONS #10 keeps the hash so the provenance of a paid value is answerable from a
+    trace months later, and a value that changes every process answers nothing.
+
+    `praetor/docile_adapter.py` has always used sha256 over the annotation bytes. This is
+    the same guarantee for the Document AI path, over the parsed response so that
+    re-parsing the identical PDF grounds against the identical document.
+    """
+    canonical = json.dumps(document, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()[:16]
 
 
 def to_record(document: dict, doc_hash: str, doc_id: str) -> InvoiceRecord:

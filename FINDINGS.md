@@ -1154,3 +1154,186 @@ claim stay compatible.
 **A filter is still worth deploying.** It is free, it catches the noisy half, and nothing
 here argues for removing one. What it cannot be is the control that stops the payment,
 which is the only claim `DECISIONS.md` #1 ever made.
+
+---
+
+## 20. A PDF in a bucket becomes a queue entry in 6.45 seconds, and the kernel never knew
+
+Measured 28 Aug 2026 on `praetor-run-2026`. `ingest/`, `workflows/sweep.yaml`, Eventarc,
+Cloud Run, Cloud Scheduler. Reproduce: drop a PDF in `gs://praetor-inbox-2026`.
+
+Until now the README said this plainly: **"the deployed instance is a queue, not a
+pipeline."** Cloud Run served the review queue and the approval path; every document
+reached it because a person ran a script. This closes that.
+
+    gs://praetor-inbox-2026/invoice.pdf
+      -> Eventarc  (google.cloud.storage.object.v1.finalized)
+      -> Cloud Run (praetor-ingest)
+      -> Document AI -> spans -> quarantined reader -> resolver -> canary -> rules -> gate
+      -> Firestore, where Priya's queue reads it
+
+| | Reader off | Reader on |
+|---|---:|---:|
+| Bucket write to a record a person can see | **4.49s** | **6.45s** |
+| of which the pipeline itself | 2.36s | 3.92s |
+| Spans offered to the reader | 21 | 21 |
+| Fields extracted | — | **7 of 7** |
+| Values the resolver refused | — | 0 |
+| Canary firings | 0 | 0 |
+| Cost per document | $0.01 | $0.01 + ~1,100 tokens |
+
+The gate returns `escalate` with `UNKNOWN_VENDOR`, `FIRST_TIME_VENDOR` and
+`TAINTED_ACCOUNT_NOT_IN_MASTER`. That is correct and worth saying: the deployed pipeline
+carries no vendor history, so every supplier is a first payment, and a first payment
+always reaches a person ([DECISIONS #12](docs/DECISIONS.md)). Nothing about automation
+changed that.
+
+### The condition the plan put on this, and how it is tested
+
+`docs/PLAN.md` allowed automation on one condition: **the kernel gets no automation
+dependency, and a test proves it runs identically with the whole layer switched off.**
+
+`tests/test_ingest.py` does it two ways. An AST scan asserts no file in `praetor/`
+imports `ingest`. Then `ingest` is evicted from `sys.modules` and `__import__` is
+monkeypatched to raise on it, and a document is put through the kernel anyway — so the
+test fails on a lazy import inside a function, which the scan alone would miss. A third
+test runs the same document through `pipeline.decide()` directly and through the whole
+pipeline and asserts every field of the outcome matches. **The automation is a courier,
+and that is a property of the code rather than of the intention.**
+
+Two things the pipeline may not do, also tested. It cannot approve — the ceiling is
+`PROPOSE_PAY`, so a document that arrives with nobody watching cannot end in a payment.
+And with no reader it escalates rather than substituting Document AI's own field values:
+`docai_adapter.to_record()` reads each entity's `mentionText`, and its own docstring says
+it is a reference for scoring rather than how a value reaches a payment. Wiring that into
+the gate would have automated the pipeline by deleting the guarantee the pipeline exists
+for.
+
+---
+
+### Three defects this found, all of which cost money or would have
+
+**1. One invoice, four charges — and nine deliveries.** The first deployment returned
+`204` with a `Content-Length` header and no body. Cloud Run cannot parse that, so it
+returned **502**; Eventarc treats a 502 as a failure and redelivered. The service's own
+log said `204` while the platform recorded `502`, which is why it was not obvious.
+
+Measured from the request log: **nine deliveries of a single object, every one a 502**,
+each arriving ~2.1–2.5s after the previous — the time a Document AI call takes, because
+the page was parsed and billed *before* the malformed response was written. The ledger
+read **4 pages billed for 1 document processed** at the point it was first inspected.
+
+The 502 is fixed: every response now carries a body. But redelivery is **not a bug** —
+at-least-once is the platform's contract — so the durable fix is idempotency.
+`ingest/server.py::claim` takes one claim per GCS object *generation*, in a Firestore
+transaction, **before** any money is spent. Re-uploading a file legitimately reprocesses
+it; a redelivered event does not. Verified by replaying a processed event twice: both
+answered `skipped`, and pages billed went 5 → 5.
+
+> A pipeline that spends per document and is triggered by a file landing in a bucket is a
+> way to bill an account in a loop. That is reachable by an ordinary bug, not only by an
+> attacker, and it took one.
+
+**2. The spending ceiling did not survive contact with Cloud Run.**
+`praetor/costguard.py` keeps its running total in a file. A container filesystem is
+ephemeral, so on every cold start the ledger reset and the ceiling protecting a live
+billing account silently returned to full. That is
+[DECISIONS #8](docs/DECISIONS.md)'s failure mode exactly — a control that fails open in
+the situation it exists for — and automation is what makes it reachable, because a
+pipeline nobody is watching is one nobody notices spending.
+
+Measured on the same recorded spend, read back from a second process:
+
+| Backend | What a fresh instance sees |
+|---|---|
+| File (what Cloud Run would have used) | **Rs 0.00**, ceiling fully restored |
+| Firestore | **Rs 2.64**, ceiling intact |
+
+The ledger backend is now injectable; `ingest/ledger.py` installs a Firestore-backed one
+using a transaction, so concurrent instances serialise rather than overwriting each
+other. **The service exits rather than starting without it** — serving with a ceiling
+that forgets is worse than not serving.
+
+The kernel did not learn about any of this: `praetor/costguard.py` is still standard
+library only and has never heard of Firestore.
+
+**3. The canary fired on every clean invoice that arrived as a PDF.** Found while
+building this, and it is the most serious of the three.
+
+`praetor/canary.py` allows `bank_account` to come from a span the document labels
+`payment_iban` — the DocILE vocabulary `praetor/docile_adapter.py` emits. **Document AI
+calls the same thing `supplier_iban`.** So on the Document AI path the origin check
+compared two vocabularies, found no match, and raised `IMPOSSIBLE_ORIGIN` on a correctly
+extracted account: **a 100% false-positive rate on the only path that reads real PDFs.**
+
+[§12](#12-the-canary-42-of-42-caught-0-false-positives-and-it-never-reads-the-text)'s
+0.0000 false-positive rate is measured on the annotation corpus and is unaffected.
+[§15](#15-the-front-door-a-real-pdf-through-document-ai-into-the-kernel-unchanged) scored
+*fields extracted*, not origins, so nothing in Phase 2 looked at this. A test even pinned
+it in place: `test_kinds_come_from_the_entities_document_ai_found` asserted
+`== "supplier_iban"`, agreeing with the code while both were wrong.
+
+Fixed in the adapter, not the kernel. `docai_adapter.SPAN_KIND_MAP` translates Document
+AI's vocabulary into the one the kernel speaks, so the canary keeps a single vocabulary
+and each adapter learns to speak it — a check holding a union of every vendor's labels
+grows an entry per adapter, and the entry nobody remembers to add is the one that
+silently changes behaviour. An unmapped kind passes through untranslated and therefore
+does **not** satisfy the allowlist, so a payment field the map has not learned escalates
+rather than paying.
+
+Verified both directions: a clean invoice now fires nothing, and an account lifted out of
+a line no entity claims still fires `IMPOSSIBLE_ORIGIN`. Reintroducing the bug fails
+three tests.
+
+**And a fourth, smaller one.** `eval/run_pdf.py` built its document hash with
+`abs(hash(json.dumps(...)))`. Python salts `hash()` per process, so **the same invoice
+produced a different `doc_hash` on every run.** Harmless while it was printed once;
+not harmless now that it is written into a record somebody audits later, which is the
+entire purpose [DECISIONS #10](docs/DECISIONS.md) keeps it for. Now sha256, the same as
+the annotation path has always used, and pinned by a test that computes it in
+subprocesses under three different hash seeds.
+
+---
+
+### The sweep: Scheduler → Workflows → Cloud Run
+
+Eventarc's at-least-once is a guarantee about duplicates and **not** a guarantee about
+drops. An event can be lost while the bucket write succeeds, and that document would sit
+in the inbox with nobody looking at it. `workflows/sweep.yaml` walks the bucket and offers
+every PDF to the ingest service; Cloud Scheduler runs it daily at 02:00 IST. The DAG
+renders in the Workflows console.
+
+It is safe to run repeatedly because the **service** is idempotent, not because the sweep
+is careful:
+
+| | |
+|---|---:|
+| Objects seen | 4 |
+| Newly processed | 0 |
+| Already done | 4 |
+| Failed | 0 |
+| **Pages billed by the sweep** | **0** |
+
+Two runs, one triggered manually and one through Cloud Scheduler, both returning that.
+The sweep's cost is one HTTP call per object; only genuinely new documents cost money.
+
+It also paginates, which is not decoration: a sweep that reads only the first page of a
+bucket listing quietly stops reconciling once the bucket grows past it, which is worse
+than having no sweep at all.
+
+### What this does not claim
+
+**The deployed pipeline has no vendor history.** Every document escalates as a first-time
+supplier, because the vendor master is built offline from a corpus. The automation is
+real; the *decision quality* in the cloud is not yet comparable to the local numbers in
+[§5](#5-rules-baseline-f1-0874-and-the-right-reason-every-time) and
+[§6](#6-adjudication-28-fewer-human-touches-and-no-wrong-resolutions).
+
+**Latency is one observation each, not a distribution.** 4.49s and 6.45s are single
+documents on a warm instance. A cold start adds container startup, which is not measured
+here.
+
+**There are now two ledgers, and that is a known inconsistency.** Local runs write to
+`out/spend.json`; the deployed service writes to Firestore. The Rs 10 ceiling is
+therefore enforced twice rather than once, against one bill — the exact shape of the
+problem `costguard.record_pages` was written to avoid. Stated rather than glossed.

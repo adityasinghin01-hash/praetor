@@ -12,7 +12,7 @@ for its reasoning; where they disagree, this file wins.
 
 | | |
 |---|---|
-| Tests | **445 passing tests**, and 439 of them with only `pytest` installed |
+| Tests | **466 passing tests**, and 460 of them with only `pytest` installed |
 | Kernel | `praetor/` imports nothing outside the standard library, and nothing from the web layer |
 | Live | https://praetor-836128159455.asia-south1.run.app · `/app` is the three-tab UI |
 | Rules baseline | precision 0.800 · recall 0.963 · **F1 0.874** on 350 invoices, 5 layouts |
@@ -21,9 +21,10 @@ for its reasoning; where they disagree, this file wins.
 | Front door | real PDF → Document AI → kernel, **30/30 fields** across 5 layouts, ₹0.88/page |
 | Second path | **0.997** held out by layout · **0 of 100** payloads beat both paths |
 | Filter, measured | Model Armor flags **7 of 8** that already failed, **3 of 12** that work |
-| Spent to date | about **₹20 of credit**. Money has never been the constraint |
+| Automation | a PDF in a bucket is a queue entry in **6.45s**, no manual step |
+| Spent to date | about **₹27 of credit**. Money has never been the constraint |
 
-**Phases 1, 2 and 3 are done.** Phase 4 is next.
+**Phases 1 to 4 are done.** Phase 5 is next.
 
 ---
 
@@ -71,13 +72,39 @@ Model Armor was measured rather than argued: **7 of the 8 payloads that already 
 of the 12 that work**, and 9 of the 12 invisible to every configuration in either framing
 (`FINDINGS.md` §19, `DECISIONS.md` #1).
 
-## Phase 4 — Automation around the kernel, never inside it · **NEXT**
+## Phase 4 — Automation around the kernel, never inside it · **DONE**
 
-Eventarc, Workflows, Cloud Scheduler, so a PDF landing in a bucket runs the pipeline with no
-manual step. The Workflows DAG renders in the console. **The kernel gets no automation
-dependency** — a test proves it runs identically with the whole layer switched off.
+`ingest/`, `workflows/sweep.yaml`, Eventarc, Cloud Run, Cloud Scheduler. A PDF landing in
+`gs://praetor-inbox-2026` becomes a record in Priya's queue in **6.45 seconds** with no
+manual step, through Document AI, the quarantined reader, the resolver, the canary, the
+rules and the gate. The README's standing admission — *"the deployed instance is a queue,
+not a pipeline"* — is retired.
 
-## Phase 5 — The moat
+**The kernel got no automation dependency, and it is tested three ways**: an AST scan for
+`praetor/` importing `ingest`; `ingest` evicted from `sys.modules` with `__import__`
+patched to raise, so a lazy import fails too; and the same document run through the
+kernel directly and through the pipeline, asserting the outcomes match field for field.
+
+The interesting part was what automating found. **Three defects, all of which cost money
+or would have** (`FINDINGS.md` §20):
+
+- A malformed response made Cloud Run return 502 while the service logged 204. Eventarc
+  redelivered nine times and every delivery had already called Document AI — **four
+  charges for one invoice**. The 502 is fixed; redelivery is not a bug, so the durable
+  answer is one claim per object generation, taken before any money is spent.
+- **The spending ceiling did not survive a cold start.** A container filesystem is
+  ephemeral, so the same recorded spend read Rs 2.64 from Firestore and Rs 0.00 from a
+  file. The service now refuses to start without a durable ledger.
+- **The canary fired on every clean invoice that arrived as a PDF.** Document AI labels
+  the payment span `supplier_iban`; the kernel's allowlist expects `payment_iban`. A 100%
+  false-positive rate on the only path that reads real documents, invisible because Phase
+  2 scored fields rather than origins — and a test had pinned the wrong value in place.
+
+Not claimed: the deployed pipeline has no vendor history, so every document escalates as
+a first-time supplier. The automation is real; the decision quality in the cloud is not
+yet the local decision quality.
+
+## Phase 5 — The moat · **NEXT**
 
 A real second tenant. The refusal network: an account refused at one client, seen at another,
 is a warning — and sharing a refusal can only raise a check, never cause a payment. That

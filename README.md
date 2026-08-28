@@ -95,7 +95,7 @@ sure the value never reaches the payment sink.
 
 **Prerequisites:** Python **3.11 or newer** and `make`. Nothing else. No cloud account,
 no API key, no billing. Verified on 27 Aug from a clean clone on **3.13.14 and 3.14.6** —
-all 445 tests pass on both. (An earlier draft of this line said "not 3.14", which was
+all 466 tests pass on both. (An earlier draft of this line said "not 3.14", which was
 left over from a `torch` dependency the project no longer has.)
 
 ```bash
@@ -355,10 +355,18 @@ State lives behind one module, so it runs on **SQLite** by default and on **Clou
 Firestore** with `PRAETOR_BACKEND=firestore` — see [docs/FIRESTORE.md](docs/FIRESTORE.md).
 The default stays local so `make demo` works with no account and no card.
 
-**Deployed on Cloud Run**, `asia-south1`, state in Cloud Firestore. A Pub/Sub fan-out
-was scoped and then **cut on measurement**: the kernel runs at ~4,100 documents/second on
-one core and 8 worker processes make it *slower*, so there is nothing to distribute. See
-[FINDINGS §11](FINDINGS.md).
+**Deployed on Cloud Run**, `asia-south1`, state in Cloud Firestore, as **two services
+from one image**. `praetor` serves the review queue and calls no model, so it cannot
+spend. `praetor-ingest` is woken by Eventarc when a PDF lands in
+`gs://praetor-inbox-2026` and runs the whole pipeline — Document AI, the quarantined
+reader, the resolver, the canary, the rules, the gate — into the queue in **6.45s**, with
+Cloud Scheduler driving a daily Workflows sweep to reconcile anything Eventarc dropped.
+They are separate services because ingestion spends money per page and the queue must not
+share that blast radius. See [FINDINGS §20](FINDINGS.md).
+
+A Pub/Sub fan-out was scoped and then **cut on measurement**: the kernel runs at ~4,100
+documents/second on one core and 8 worker processes make it *slower*, so there is nothing
+to distribute. See [FINDINGS §11](FINDINGS.md).
 
 ## Why it is shaped this way
 
@@ -410,9 +418,13 @@ be hijacked by the document it is reading.*
 - **The Gemma fallback is a degraded service, not an equivalent one.** On a tax-rate
   exception with a legitimate exemption note, Gemma 3 1b still voted escalate. Safe
   direction to fail in, but it will clear fewer exceptions than Gemini does.
-- **The deployed instance is a queue, not a pipeline.** Cloud Run serves the review
-  queue and the approval path; adjudication is a separate offline script, so the
-  container calls no model and cannot spend. There is therefore no *cloud* throughput or
-  dollar-cost figure — the throughput number in [FINDINGS §11](FINDINGS.md) is a local
-  one-core measurement, and the reason there is no fan-out figure is that fan-out was
-  measured and rejected, not that it is pending.
+- **The deployed pipeline has no vendor history.** A PDF landing in
+  `gs://praetor-inbox-2026` now becomes a queue entry in 6.45s with no manual step
+  ([FINDINGS §20](FINDINGS.md)) — but the vendor master is built offline from a corpus,
+  so every document in the cloud escalates as a first-time supplier. The automation is
+  real; the decision quality there is not yet the decision quality in
+  [FINDINGS §5–6](FINDINGS.md).
+- **The throughput number is a local one-core measurement.** [FINDINGS §11](FINDINGS.md)
+  is a laptop figure, and the reason there is no Pub/Sub fan-out figure is that fan-out
+  was measured and rejected, not that it is pending. The queue service still calls no
+  model and cannot spend; ingestion is a separate service precisely so that stays true.

@@ -104,11 +104,19 @@ def test_the_canary_fires_on_a_privileged_value_taken_from_that_line(document):
 # ------------------------------------------------------------------------- span kinds
 
 def test_kinds_come_from_the_entities_document_ai_found(document):
+    """Kinds are Document AI's, translated into the vocabulary the kernel speaks.
+
+    This test used to assert `== "supplier_iban"`, which is Document AI's raw type -- and
+    in doing so it pinned a defect in place: the canary's allowlist is written in the
+    DocILE vocabulary, so the raw type made every clean invoice trip IMPOSSIBLE_ORIGIN.
+    The test agreed with the code and both were wrong. It asserts the translated value
+    now, and the tests below assert the behaviour that makes it matter.
+    """
     kinds = docai_adapter.span_kinds_of(document)
     spans = docai_adapter.spans_of(document)
     by_text = {t: kinds[s] for s, t in spans.items()}
-    assert by_text[PRINTED["bank_account"]] == "supplier_iban"
-    assert by_text[PRINTED["invoice_number"]] == "invoice_id"
+    assert by_text[PRINTED["bank_account"]] == "payment_iban"     # was supplier_iban
+    assert by_text[PRINTED["invoice_number"]] == "invoice_id"     # no translation needed
     assert by_text["TOTAL DUE"] == "other", "a label is not a field"
 
 
@@ -189,3 +197,114 @@ def test_the_adapter_imports_only_the_standard_library():
     outside = sorted(m for m in imported - {"__future__", "praetor"}
                      if m not in sys.stdlib_module_names)
     assert outside == [], f"the front door must not pull dependencies into the kernel: {outside}"
+
+
+# ---------------------------------------------------------------------------
+# The vocabulary bug. praetor/canary.py allows `bank_account` to come from a span the
+# document labels `payment_iban` -- the DocILE vocabulary. Document AI calls the same
+# thing `supplier_iban`, so before SPAN_KIND_MAP existed every clean invoice through the
+# Document AI path tripped IMPOSSIBLE_ORIGIN: a 100% false-positive rate on the only path
+# that reads real PDFs. Phase 2 measured fields extracted, not origins, so nothing caught
+# it. These tests are the teeth.
+
+def _fixture():
+    import json
+    from pathlib import Path
+    path = Path(__file__).resolve().parent / "fixtures" / "docai_V000_003.json"
+    return json.loads(path.read_text())
+
+
+def test_the_canary_does_not_fire_on_a_clean_document_ai_invoice():
+    from praetor import canary
+    from praetor.docai_adapter import span_kinds_of, to_record
+
+    document = _fixture()
+    kinds = span_kinds_of(document)
+    record = to_record(document, "docai:test", "V000_003")
+
+    assert record.bank_account is not None, "the fixture must carry an account"
+    assert not canary.check(record, kinds), (
+        "the canary fired on a correctly extracted account from a real Document AI "
+        "response -- this is a false positive on every clean invoice")
+
+
+def test_the_payment_span_is_translated_into_the_kernels_vocabulary():
+    from praetor import canary
+    from praetor.docai_adapter import span_kinds_of, to_record
+
+    document = _fixture()
+    kinds = span_kinds_of(document)
+    record = to_record(document, "docai:test", "V000_003")
+    kind = kinds[record.bank_account.prov.span_id]
+
+    assert kind in canary.LEGITIMATE_ORIGINS["bank_account"], (
+        f"Document AI labelled the payment span {kind!r}, which the canary does not "
+        f"accept. Translate it in docai_adapter.SPAN_KIND_MAP.")
+
+
+def test_the_canary_still_fires_on_prose_through_document_ai():
+    """The fix must not be 'allow everything'. An account lifted out of a line no entity
+    claims is still structurally impossible."""
+    from praetor import canary
+    from praetor.docai_adapter import span_kinds_of, spans_of
+    from praetor.resolver import resolve
+
+    document = _fixture()
+    kinds = span_kinds_of(document)
+    spans = spans_of(document)
+    prose = [sid for sid, k in kinds.items() if k == "other"]
+    assert prose, "the fixture must contain at least one unclaimed line"
+
+    res = resolve({"bank_account": prose[0]}, spans, "docai:test", "V000_003")
+    assert res.record.bank_account is not None, "the resolver should accept a real span"
+    assert [f.code for f in canary.check(res.record, kinds)] == ["IMPOSSIBLE_ORIGIN"]
+
+
+def test_the_buyers_own_account_is_never_mapped():
+    """`receiver_iban` is the buyer's account. Mapping it onto the supplier, or
+    translating it into a legitimate payment origin, would be the worst possible bug in
+    this file -- so both are asserted rather than assumed."""
+    from praetor.docai_adapter import FIELD_MAP, NEVER_MAPPED, SPAN_KIND_MAP
+
+    assert "receiver_iban" in NEVER_MAPPED
+    assert "receiver_iban" not in FIELD_MAP
+    assert "receiver_iban" not in SPAN_KIND_MAP
+
+
+def test_an_unknown_span_kind_passes_through_rather_than_being_invented():
+    """An unmapped kind must stay unmapped, so a payment field this map has not learned
+    escalates instead of paying. Failing closed is the point."""
+    from praetor.docai_adapter import SPAN_KIND_MAP
+
+    assert SPAN_KIND_MAP.get("a_type_nobody_has_seen") is None
+
+
+# --------------------------------------------------------------- provenance determinism
+
+def test_the_document_hash_is_stable_across_processes():
+    """It was `abs(hash(json.dumps(...)))`, which is salted per process: the same invoice
+    produced a different doc_hash on every run. DECISIONS #10 keeps the hash so the
+    provenance of a paid value is answerable months later, and a value that changes every
+    process answers nothing.
+
+    Computed in a SUBPROCESS with a different hash seed, because an in-process comparison
+    passes even with the bug.
+    """
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    code = (
+        "import json,sys;sys.path.insert(0,%r);"
+        "from praetor.docai_adapter import content_hash;"
+        "print(content_hash(json.load(open(%r))))"
+        % (str(root), str(root / "tests" / "fixtures" / "docai_V000_003.json"))
+    )
+    seen = set()
+    for seed in ("0", "1", "12345"):
+        env = {"PYTHONHASHSEED": seed, "PATH": "/usr/bin:/bin"}
+        out = subprocess.run([sys.executable, "-c", code], capture_output=True,
+                             text=True, env=env, check=True)
+        seen.add(out.stdout.strip())
+    assert len(seen) == 1, f"doc_hash changed with the hash seed: {seen}"
