@@ -134,21 +134,31 @@ def span_kinds_of(annotation: dict) -> dict[str, str]:
         that moves money has to fail closed, so the span is marked unknown and the
         canary fires.
     """
-    seen: dict[str, set[str]] = {}
+    # (text -> labels) per span id, and the text `spans_of` would resolve for it.
+    # Keeping them together is the point: a label describes the string it was attached
+    # to, and the only string that matters is the one the resolver will hand back.
+    per_text: dict[str, dict[str, set[str]]] = {}
+    winning: dict[str, str] = {}
     for fld in annotation.get("field_extractions", []):
         sid = _span_id(int(fld.get("page", 0)), fld.get("bbox", [0, 0, 0, 0]))
-        seen.setdefault(sid, set()).add(str(fld.get("fieldtype", "") or ""))
+        text = str(fld.get("text", "")).strip()
+        per_text.setdefault(sid, {}).setdefault(text, set()).add(
+            str(fld.get("fieldtype", "") or ""))
+        winning[sid] = text          # last wins, exactly as `spans_of` resolves it
 
     out: dict[str, str] = {}
-    for sid, labels in seen.items():
+    for sid, by_text in per_text.items():
+        # Only the labels belonging to the text that actually wins. A label attached to
+        # some OTHER string at the same box says nothing about this value.
+        labels = by_text.get(winning[sid], set())
         real = {l for l in labels if l not in UNCLASSIFIED}
         if len(real) == 1:
             out[sid] = next(iter(real))
         elif not real:
             out[sid] = "other"
         else:
-            # Ambiguous. `__ambiguous__` is in no allowlist, so the origin check
-            # refuses it rather than picking one.
+            # Two different real labels on one string. `__ambiguous__` is in no
+            # allowlist, so the origin check refuses it rather than picking one.
             out[sid] = "__ambiguous__"
     return out
 

@@ -177,3 +177,34 @@ def test_the_guarded_fields_are_the_ones_that_move_money():
         "unguarded field is never consulted")
     assert "line_item_amount" not in LEGITIMATE_ORIGINS["amount_total"], (
         "a total lifted from one line of the table is wrong by construction")
+
+
+def test_a_span_planted_at_the_payment_fields_box_cannot_inherit_its_label():
+    """The hole the first repair opened, and the reason it is worth a test.
+
+    `spans_of` resolves a colliding box's TEXT last-wins. The first fix for §29 merged
+    LABELS across the box, so a span planted at the real payment field's coordinates took
+    over the value while inheriting `payment_iban` -- and the origin check passed it. The
+    original last-wins code escalated that document; the repair made it payable.
+
+    A label describes the string it was attached to, so only the labels belonging to the
+    winning text count.
+    """
+    from praetor.docile_adapter import span_kinds_of, spans_of
+
+    bbox = [0.08, 0.78, 0.52, 0.81]
+    ann = {"field_extractions": [
+        {"fieldtype": "payment_iban", "text": "NL78RABO5699252753", "page": 0, "bbox": bbox},
+        {"fieldtype": "other", "text": "IN99XXXX66660001", "page": 0, "bbox": bbox},
+    ]}
+    sid = next(iter(spans_of(ann, "h")))
+    assert spans_of(ann, "h")[sid] == "IN99XXXX66660001", "text is still last-wins"
+    assert span_kinds_of(ann)[sid] != "payment_iban", (
+        "the attacker's value inherited the real payment field's label")
+
+    # and the legitimate case it was all for still works: same text, two labels
+    same = {"field_extractions": [
+        {"fieldtype": "amount_total", "text": "9.00", "page": 0, "bbox": bbox},
+        {"fieldtype": "other", "text": "9.00", "page": 0, "bbox": bbox},
+    ]}
+    assert span_kinds_of(same)[next(iter(spans_of(same, "h")))] == "amount_total"

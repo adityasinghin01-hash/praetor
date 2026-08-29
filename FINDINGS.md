@@ -2326,18 +2326,46 @@ correctly labelled total arriving from a span it believed was prose, and refused
 The synthetic corpus has no colliding boxes, so this scored a perfect zero for as long as
 nobody ran it on real paper.
 
-**Fixed by combining rather than overwriting.** `other` and the empty string are the parser
-declining to classify, and never win. Exactly one real label wins. Two *different* real
-labels are genuinely ambiguous, and ambiguity on a field that moves money fails closed —
-the span is marked `__ambiguous__`, which is in no allowlist. After the fix:
+**Fixed, and the first fix was worse than the bug.**
 
-| corpus | before | after |
-|---|---:|---:|
-| SROIE, real scans | 289 / 300 | **0 / 300** |
-| `data/constructed` | 0 / 350 | 0 / 350 |
-| `data/constructed_v2` | 0 / 350 | 0 / 350 |
+The obvious repair is to merge the labels for one box: `other` never wins, one real label
+wins, two real labels fail closed. That took SROIE from 289 to **0** false positives.
 
-and the attack side is unchanged — **100% caught on all three corpora.**
+**It also opened an attack, found by reviewing the change rather than by any test.**
+`spans_of` resolves a colliding box's *text* last-wins. Merging *labels* across the box
+therefore let a span planted at the real payment field's coordinates take over the value
+while inheriting that field's label:
+
+```
+payment_iban  "NL78RABO5699252753"   ] same bbox
+other         "IN99XXXX66660001"     ]
+
+text resolved -> IN99XXXX66660001     (the attacker's)
+label merged  -> payment_iban         (the real field's)
+origin check  -> passes
+```
+
+Under the original last-wins code that document escalated. The repair made it payable.
+
+**A label describes the string it was attached to.** So the labels considered are only
+those belonging to the text that actually wins:
+
+| corpus | original | naive merge | **shipped** |
+|---|---:|---:|---:|
+| SROIE, real scans | 289 / 300 | 0 / 300 | **17 / 300 — 0.0567** |
+| `data/constructed` | 0 / 350 | 0 / 350 | **0 / 350** |
+| `data/constructed_v2` | 0 / 350 | 0 / 350 | **0 / 350** |
+| the planted-span attack | escalates | **payable** | **escalates** |
+
+Attack side unchanged throughout — **100% caught on all three corpora.**
+
+**The residual 17 are correct, not tolerated.** Every one has the shape
+`[('amount_total', '33.90'), ('other', 'RM 33.90')]` — the OCR emitted a wider box
+carrying the currency prefix, at the same rounded coordinates, and it comes last. The
+value that would be resolved is `RM 33.90`, which is genuinely **not** the string the
+annotation labelled as the total. Refusing to certify its origin is the right answer.
+
+96.33% to 5.67%, with the hole the first repair opened closed.
 
 ### And the same defect again, on the next field
 
@@ -2659,3 +2687,62 @@ Sources: [Annex III, EU Artificial Intelligence Act](https://artificialintellige
 [EU AI Act credit scoring scope](https://www.regulatoryai.eu/ai-creditworthiness/) ·
 [SOX 404 compliance for AI-assisted controls, 2026](https://www.finrep.ai/blog/sox-404-compliance-checklist-for-ai-assisted-controls-2026) ·
 [What's changing in SOX and internal controls in 2026](https://cpeonline.com/whats-changing-sox-and-internal-controls-2026)
+
+---
+
+## 34. The 28% is 94.7% of what was there to take
+
+[§6](#6-adjudication-28-fewer-human-touches-and-no-wrong-resolutions) reports the agent
+removing **28% of human touches** — 65 exceptions down to 47, precision 1.000. Read on its
+own that is a modest number, and this project's own list of weaknesses records it as one:
+*"the agent saves less than it sounds."*
+
+That reading was wrong, and the number that shows it costs nothing to compute. **The
+corpus knows the correct answer for every exception**, because every deviation was planted
+deliberately (`eval/make_invoices.py` writes `correct_action` into the ground truth). So
+the ceiling is knowable: how many of those 65 exceptions were resolvable *at all*.
+
+| frozen corpus, 65 exceptions | |
+|---|---:|
+| ground truth says **escalate** — no correct agent can resolve these | 33 |
+| ground truth says **pass** — rules false positives | 13 |
+| ground truth says **resolve** — the work actually available | **19** |
+| | |
+| **ceiling on autonomy** | **19 / 65 = 29.2%** |
+| **the agent achieved** | **18 / 65 = 27.7%** |
+| **share of the ceiling reached** | **94.7%** |
+| of those 18 resolves, ground truth agreed | **18 of 18** |
+
+**The agent took 18 of the 19 removals that existed, and got every one right.** The 28% is
+not the agent's performance against what is possible; it is the agent's performance
+against what is *there*. A better model cannot do much better than 29.2% on this corpus,
+because 33 of the 65 exceptions are privileged or unexplained and a correct system must
+send every one of them to a person.
+
+The same is true of the wider corpus, so this is a property of how these documents are
+built rather than a fluke of one draw:
+
+| `constructed_v2`, 60 exceptions | |
+|---|---:|
+| escalate | 29 |
+| pass (false positives) | 13 |
+| **resolve — the ceiling** | **18 / 60 = 30.0%** |
+
+### What this changes, and what it does not
+
+**It changes the criticism.** "The agent saves less than it sounds" is not a fact about the
+agent. It is a fact about a corpus containing 19 resolvable exceptions. The honest version
+is: *this corpus does not contain much resolvable work, and the agent takes nearly all of
+what it does contain.*
+
+**It does not make the number bigger.** 28% is still 28%, and 18 decisions is still 18
+decisions. Anyone quoting an autonomy figure from this repo should quote the ceiling
+beside it, because a system that resolved 60% here would be resolving things a correct
+system must refuse — and
+[§27](#27-rule-4-costs-every-resolve-on-this-corpus-measured-without-spending-anything)
+shows how easily that number moves in the other direction: Rule 4 takes it to 0.0%.
+
+**And it says nothing about real work.** How much of a real accounts-payable queue is
+resolvable from the document alone is unknown, and this corpus was built by us to be 29%.
+That is the number to be suspicious of, and no amount of measuring our own generator will
+settle it.

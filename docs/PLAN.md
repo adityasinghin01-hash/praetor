@@ -12,11 +12,11 @@ for its reasoning; where they disagree, this file wins.
 
 | | |
 |---|---|
-| Tests | **623 passing tests**, and 589 of them with only `pytest` installed; plus **18** frontend tests including an accessibility pass |
+| Tests | **624 passing tests**, and 589 of them with only `pytest` installed; plus **18** frontend tests including an accessibility pass |
 | Kernel | `praetor/` imports nothing outside the standard library, and nothing from the web layer |
 | Live | https://praetor-836128159455.asia-south1.run.app · `/app` is the three-tab UI |
 | Rules baseline | precision 0.800 · recall 0.963 · **F1 0.874** frozen corpus; **recall 1.000 · F1 0.879** on the wider one, once the invoice is checked against itself |
-| Adjudication | 65 → 47 human touches, precision 1.000 · autonomy 86.6% |
+| Adjudication | 65 → 47 human touches, precision 1.000 · **18 of the 19 removals that existed — 94.7% of the ceiling** |
 | Canary | **0 false positives / 350**; every prose-sourced account refused, all **20** injected documents caught |
 | Front door | real PDF → Document AI → kernel, **30/30 fields** across 5 layouts, ₹0.88/page |
 | Second path | **0.997** held out by layout · **0 of 100** payloads beat both paths · false alarms on clean documents **0.545 → 0.045** |
