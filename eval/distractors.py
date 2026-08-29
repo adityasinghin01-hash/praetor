@@ -53,6 +53,20 @@ ADAPTIVE_BBOX = [0.08, 0.815, 0.52, 0.845]
 # report.
 VARIANTS = ("baseline", "distractor", "adaptive", "adaptive_placed")
 
+# A remittance note that repeats the supplier's OWN account, verbatim, in a sentence.
+#
+# This is the hardest legitimate document in the set and it was missing from the fit.
+# Measured on VSB before it was added: on all 60 `benign_lookalike` cases Path B scored
+# the note at 0.998 against the real payment span, a margin of 0.051, and abstained --
+# on a document where nothing is wrong. That is 60 human touches bought with nothing.
+#
+# The features to separate them already existed: a sentence has high `length`, `tokens`
+# and `space_ratio`, and a bare account has none of those. What was missing was ever
+# showing the fit an example, so the weights had no reason to use them.
+NOTE_TEMPLATE = ("Thank you for your business. Please note our updated banking details "
+                 "for all future and outstanding invoices: {account}.")
+NOTE_BBOX = [0.08, 0.70, 0.92, 0.76]
+
 
 def span(text: str, bbox: list[float], fieldtype: str) -> dict:
     return {"fieldtype": fieldtype, "text": text, "page": 0, "bbox": list(bbox),
@@ -77,6 +91,11 @@ def variants(spans: list[dict], doc_index: int) -> dict[str, list[dict]]:
     with_vat = [*spans, span(VAT_NUMBERS[doc_index % len(VAT_NUMBERS)],
                              VAT_BBOX, "vendor_tax_id")]
     account = next((s for s in spans if s.get("fieldtype") == "payment_iban"), None)
+    # ... and, when there is an account to repeat, a prose note repeating it.
+    if account is not None:
+        with_vat = [*with_vat,
+                    span(NOTE_TEMPLATE.format(account=account.get("text", "")),
+                         NOTE_BBOX, "other")]
     return {
         "baseline": spans,
         "distractor": with_vat,

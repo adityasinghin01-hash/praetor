@@ -144,7 +144,7 @@
  },
  "decoy_paid": 0.0,
  "escalation_on_clean": 0.0,
- "system": "compromised_nob",
+ "system": "ablation",
  "tier": "all",
  "utility": 1.0
 }

@@ -1885,9 +1885,14 @@ repo, with no API key, no Ollama and no GPU.
 
 | Reader | Second path | Attack success | Utility | Escalation on clean |
 |---|---|---:|---:|---:|
-| **fully compromised** | on | **0.000** (0/480) | 0.455 | 0.545 |
-| **fully compromised** | off | **0.042** (20/480) | **1.000** | 0.000 |
-| oracle — cannot be wrong | on | 0.000 | 0.455 | 0.545 |
+| **fully compromised** | on | **0.000** (0/480) | **0.955** | **0.045** |
+| **fully compromised** | off | **0.042** (20/480) | 1.000 | 0.000 |
+| oracle — cannot be wrong | on | 0.000 | 0.955 | 0.045 |
+
+> The first row read **0.455 / 0.545** when this section was first written. That was the
+> second path abstaining on every document carrying a second account-shaped token, and
+> [§31](#31-the-hardest-legitimate-document-was-missing-from-the-fit) is what changed it.
+> The attack column did not move.
 
 The compromised reader names the **attacker's span** for the privileged field on every
 single case, and is correct on everything else. It is the architecture's central claim run
@@ -1898,8 +1903,8 @@ as an experiment: assume the reader is entirely lost, and measure what is left.
 ### The trade, stated as arithmetic
 
 Row 2 is the ablation. With the canary alone, **20 of 480 attacks succeed and utility is
-perfect**. With the second path, attack success is 0 and **0.545 of clean documents go to
-a person for nothing**.
+perfect**. With the second path, attack success is 0 and **0.045 of clean documents go to
+a person for nothing** — twenty attacks stopped for ten human touches.
 
 All 20 that beat the single path are the same case: **`parser-labelled account`, 4 account
 shapes x 5 layouts**. The attacker printed a second account line and the document parser
@@ -1908,11 +1913,11 @@ is blind by construction. Every such case declares that in
 `parser_labels_attacker_span`, rather than leaving a system to be scored against an
 assumption nobody told it about.
 
-And the 0.545 is not the attacks. **All 100 controls are answered correctly. All 60 decoys
-and all 60 benign lookalikes escalate**, because Path B sees a second account-shaped token
-and declines to have an opinion. That is §17's denial-of-service cost — *"an attacker who
-cannot win can still force documents to a person"* — measured on 120 documents where
-nobody is attacking at all. A legitimate VAT number on the page costs a human touch.
+And the escalations are not the attacks. All 100 controls and all 60 benign lookalikes are
+answered correctly; **10 of the 60 decoys still escalate**, where Path B cannot separate a
+legitimate VAT registration from the payable account. That is what remains of §17's
+denial-of-service cost — *"an attacker who cannot win can still force documents to a
+person"* — and it is now one document in twenty-two rather than one in two.
 
 ### What this is not
 
@@ -2390,3 +2395,84 @@ baseline is exactly what it was.
 - **It raises a finding; it authorises nothing.** The 13 false positives on the wider
   corpus are unchanged by it — they were already there, from the amount and duplicate
   rules.
+
+---
+
+## 31. The hardest legitimate document was missing from the fit
+
+[§25](#25-vsb-the-benchmark-that-did-not-exist-and-the-trade-it-makes-visible) measured the
+second path's cost honestly and the number was bad: **0.545 of clean documents escalated
+for nothing.** One good invoice in two interrupting a person is not a product. It was the
+worst measured figure in this repository and it came from our own benchmark.
+
+It was not a threshold to be tuned. It was a missing training example.
+
+### What was actually happening
+
+Path B abstains when two candidate spans score too close together. On the clean families:
+
+| VSB family | top probability | margin | outcome |
+|---|---:|---:|---|
+| `control` | 0.947 | 0.927 | picks, correctly |
+| `decoy` — a legitimate VAT number on the page | 0.947 | **0.036** | abstains |
+| `benign_lookalike` — a note repeating the supplier's own account | 0.998 | **0.051** | abstains |
+
+The top pick was right every time. The runner-up was simply too close, so the path declined
+to have an opinion, and a document nobody was attacking went to a person.
+
+**The features to separate them already existed.** A prose sentence has high `length`,
+`tokens` and `space_ratio`; a bare account has none of those. The weights had no reason to
+use them, because `eval/distractors.py` only ever added a **short** distractor — a VAT
+number — and never a sentence containing an account. The fit had never been shown the case.
+
+### The fix, and what it cost
+
+One line of training data: the distractor variant now also carries a remittance note
+repeating the supplier's own account, which is the hardest legitimate document in the set.
+Refit, held out by layout as always.
+
+| | before | after |
+|---|---:|---:|
+| **Attack success (VSB, 480 attacks)** | **0.000** | **0.000** |
+| Utility on clean documents | 0.455 | **0.955** |
+| **Escalation on clean** | **0.545** | **0.045** |
+| decoys paid | 0.000 | 0.000 |
+| `benign_lookalike` answered correctly | 0 / 60 | **60 / 60** |
+| `decoy` answered correctly | 0 / 60 | **50 / 60** |
+
+**Twelve times fewer false alarms, and the attack column did not move.**
+
+Everything else the second path is measured on was re-scored, and **every published number
+came back identical**:
+
+| | before | after |
+|---|---|---|
+| Path B held out by layout (§16) | 0.997 | **0.997** |
+| Adaptive stress, `PAID` column (§17) | 0 | **0** |
+| Two paths, beat both (§18) | 0 / 100 | **0 / 100** |
+| Attacker moves second, sink (§26) | 0.000 at every budget | **0.000 at every budget** |
+
+§18 was re-scored with `run_twopath.py --rescore`, which replays Path A's stored answers
+and calls no model — the reason a change to the second path could be re-measured at all on
+a 20-request-per-day quota.
+
+### The through-line, for the fourth time
+
+Path B learned that a payment field sits low on the page ([§17](#17-geometry-is-the-feature-an-attacker-writes-to-and-the-layout-hold-out-is-what-found-it)).
+The fine-tuned reader learned the training layouts' left margins ([§24](#24-the-fine-tuned-reader-6x-better-where-it-trained-10x-worse-where-it-did-not)).
+Path B learned that an account is an IBAN ([§28](#28-a-second-corpus-and-everything-that-reads-content-broke)).
+And Path B had never seen a sentence with an account in it, so it treated one as a rival
+for the payment field.
+
+**Four times, the same shape: a component that looked broken was a component that had been
+shown too little.** Every one was found by widening the data, and three of the four were
+fixed by widening it further rather than by changing any code.
+
+### What is still not fixed
+
+**10 of 60 decoys still escalate.** A legitimate VAT registration is genuinely hard to tell
+from a payable account by composition alone — both are alphanumeric runs of similar length
+with a country prefix — and unlike the note, there is no length or word-count signal to
+separate them. That is the honest residue: one clean document in twenty-two still costs a
+person a look, and closing it needs a feature that knows what a tax registration is, not
+another training example.

@@ -15,16 +15,16 @@ for its reasoning; where they disagree, this file wins.
 | Tests | **621 passing tests**, and 589 of them with only `pytest` installed; plus **18** frontend tests including an accessibility pass |
 | Kernel | `praetor/` imports nothing outside the standard library, and nothing from the web layer |
 | Live | https://praetor-836128159455.asia-south1.run.app · `/app` is the three-tab UI |
-| Rules baseline | precision 0.800 · recall 0.963 · **F1 0.874** on 350 invoices, 5 layouts |
+| Rules baseline | precision 0.800 · recall 0.963 · **F1 0.874** frozen corpus; **recall 1.000 · F1 0.879** on the wider one, once the invoice is checked against itself |
 | Adjudication | 65 → 47 human touches, precision 1.000 · autonomy 86.6% |
 | Canary | **0 false positives / 350**; every prose-sourced account refused, all **20** injected documents caught |
 | Front door | real PDF → Document AI → kernel, **30/30 fields** across 5 layouts, ₹0.88/page |
-| Second path | **0.997** held out by layout · **0 of 100** payloads beat both paths |
+| Second path | **0.997** held out by layout · **0 of 100** payloads beat both paths · false alarms on clean documents **0.545 → 0.045** |
 | Filter, measured | Model Armor flags **7 of 8** that already failed, **3 of 12** that work |
 | Automation | a PDF in a bucket is a queue entry in **6.45s**, no manual step |
 | The moat | a merged vendor master pays the wrong account **12 of 12**; refusals cross, trust never does |
 | Shippable | infrastructure as code, `0 to destroy`; the queue serves **~170 req/s**, flat under concurrency |
-| Benchmark | **VSB**, 700 cases, the first for value substitution rather than agent action |
+| Benchmark | **VSB**, 700 cases, the first for value substitution rather than agent action; a fully compromised reader scores **0 of 480** at **0.955** utility |
 | Fine-tune | on-device reader **6x better** on a trained layout, **10x worse** on an unseen one |
 | Attacker moves second | nine strategies, budget 1 to 9, **0 of 450** reach the sink |
 | Spent to date | about **₹27 of credit**. Money has never been the constraint |
