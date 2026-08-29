@@ -93,12 +93,12 @@ Or skip steps 2–4 entirely and run `make install`, which does all three.
 make test
 ```
 
-You should see **`598 passed`**. If you do, everything is set up correctly.
+You should see **`600 passed`**. If you do, everything is set up correctly.
 
 (If you'd rather not use `make`: `PYTHONPATH=. .venv/bin/python -m pytest tests/ -q`.
 Use `.venv/bin/python`, not bare `python3` — the packages only exist inside the venv.)
 
-These 598 tests are not normal tests. They are our security promises written as code.
+These 600 tests are not normal tests. They are our security promises written as code.
 If one ever fails, one of our claims to the judges has become untrue.
 
 ---

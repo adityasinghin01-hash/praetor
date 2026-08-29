@@ -102,6 +102,47 @@ def _is_privileged(findings) -> bool:
     return False
 
 
+def gate_decision(agent_decision: str, findings, pattern, context: list[str],
+                  register=None, invoice_amount: float | None = None, record=None,
+                  require_rule: bool = False) -> tuple[str, bool, str | None]:
+    """What happens to the agent's vote after it has voted. No model, no I/O.
+
+    Returns `(final_decision, overridden, why)`.
+
+    Separated from `adjudicate` so it can be replayed over a completed run's stored
+    votes: the agent's answer is the only part of an adjudication that costs a model
+    call, and everything here is deterministic. That is what lets Rule 4's cost be
+    measured against the published run without paying for it again -- and it means the
+    replay exercises this code rather than a copy of it (DECISIONS #15).
+    """
+    if agent_decision != "resolve":
+        return agent_decision, False, None
+
+    # A privileged field is not a discrepancy to be explained; it is a payment target.
+    if _is_privileged(findings):
+        return "escalate", True, "privileged field"
+
+    # An authorisation the document claims for itself is an assertion, not evidence. If
+    # it names nothing we can check against the buyer's own records, it cannot carry the
+    # decision. See praetor/authority.py.
+    bad = authority.unverified(context, register, invoice_amount)
+    if bad:
+        return "escalate", True, f"unverified authority: {bad[0].describe()}"
+
+    # Rule 4. The agent may point at a reason, never author one. If nothing the buyer
+    # already knows verifies, the resolve is void -- and a sentence claiming something
+    # unverifiable ("agreed on the call last Tuesday") never gets read, so it cannot
+    # help. See praetor/resolution.py.
+    if require_rule:
+        held = resolution.any_rule_holds(
+            findings, record if record is not None else InvoiceRecord(doc_id=""),
+            pattern, context, register, invoice_amount)
+        if held is None:
+            return "escalate", True, "no pre-authorised rule holds for this exception"
+
+    return agent_decision, False, None
+
+
 def adjudicate(findings, pattern, context: list[str], client=None,
                models=MODEL_CHAIN, register=None, allow_local: bool = True,
                invoice_amount: float | None = None, record=None,
@@ -196,26 +237,7 @@ def adjudicate(findings, pattern, context: list[str], client=None,
 
     # The gate has the last word. This is the guarantee: it does not depend on the
     # agent resisting a persuasive note.
-    if agent_decision == "resolve":
-        if privileged:
-            return _traced("escalate", True, "privileged field")
-        # An authorisation the document claims for itself is an assertion, not
-        # evidence. If it names nothing we can check against the buyer's own records,
-        # it cannot carry the decision. See praetor/authority.py.
-        bad = authority.unverified(context, register, invoice_amount)
-        if bad:
-            return _traced("escalate", True,
-                           f"unverified authority: {bad[0].describe()}")
-        # Rule 4. The agent may point at a reason, never author one. If nothing the
-        # buyer already knows verifies, the resolve is void -- and a sentence claiming
-        # something unverifiable ("agreed on the call last Tuesday") never gets read,
-        # so it cannot help. See praetor/resolution.py.
-        if require_rule:
-            held = resolution.any_rule_holds(
-                findings, record if record is not None else InvoiceRecord(doc_id=""),
-                pattern, context, register, invoice_amount)
-            if held is None:
-                return _traced("escalate", True,
-                               "no pre-authorised rule holds for this exception")
-
-    return _traced(agent_decision, False)
+    final, overridden, why = gate_decision(
+        agent_decision, findings, pattern, context, register=register,
+        invoice_amount=invoice_amount, record=record, require_rule=require_rule)
+    return _traced(final, overridden, why)

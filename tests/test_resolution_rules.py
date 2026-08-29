@@ -202,3 +202,50 @@ def test_no_rule_reads_the_note_for_its_own_sake(rule_id):
     prose = ["approved", "authorised by the finance director", "agreed on the call"]
     assert not resolution.verify(rule_id, findings, InvoiceRecord(doc_id="x"),
                                  None, prose, register={}).ok
+
+# --------------------------------------------------------------- the vacuous R2 pass
+
+def test_r2_refuses_when_there_is_no_invoice_number_to_compare_against():
+    """A reissue that cites ITSELF is not evidence, and without this invoice's own
+    number there is no way to tell that from a reissue citing a prior one.
+
+    Measured, not hypothetical: `eval/run_adjudication.py` passed no record, so
+    `current` was the empty string, the `ref != current` guard never matched, and R2
+    resolved 4 duplicate-invoice exceptions that it refuses the moment the record is
+    supplied. Rule 4 would have shipped with a rule that passes on missing input.
+    """
+    from praetor import resolution
+    from praetor.types import Finding, InvoiceRecord, VendorPattern
+
+    pattern = VendorPattern(vendor_key="acme", n_invoices=5,
+                            seen_invoice_numbers={"INV-1000"})
+    findings = [Finding(code="DUPLICATE_INVOICE", field="invoice_number", detail="dup")]
+    context = ["corrected reissue of invoice INV-1000"]
+
+    ok, why = resolution._r2_known_reissue(
+        findings, InvoiceRecord(doc_id=""), pattern, context, None, None)
+    assert ok is False, "R2 passed on an empty record"
+    assert "no invoice number" in why
+
+    # and it must still work when the record IS supplied and the citation is genuine
+    rec = InvoiceRecord(doc_id="d")
+    from praetor.types import Field, Provenance
+    rec.invoice_number = Field(value="INV-1001",
+                               prov=Provenance(doc_hash="h", span_id="s", tainted=True))
+    ok, why = resolution._r2_known_reissue(findings, rec, pattern, context, None, None)
+    assert ok is True, why
+
+    # ...and refuse when the document cites its own number
+    rec.invoice_number = Field(value="INV-1000",
+                               prov=Provenance(doc_hash="h", span_id="s", tainted=True))
+    ok, _why = resolution._r2_known_reissue(findings, rec, pattern, context, None, None)
+    assert ok is False, "a document citing itself was accepted as evidence"
+
+
+def test_the_adjudication_harness_passes_the_record():
+    """R4 reads the record. A harness that passes none runs Rule 4 a quarter of its own
+    rule set short, and the shortfall is invisible in the output."""
+    import pathlib
+    src = pathlib.Path(__file__).resolve().parents[1] / "eval" / "run_adjudication.py"
+    code = "\n".join(l.split("#")[0] for l in src.read_text().splitlines())
+    assert "record=rec" in code

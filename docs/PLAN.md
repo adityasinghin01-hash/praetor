@@ -12,7 +12,7 @@ for its reasoning; where they disagree, this file wins.
 
 | | |
 |---|---|
-| Tests | **598 passing tests**, and 566 of them with only `pytest` installed; plus **18** frontend tests including an accessibility pass |
+| Tests | **600 passing tests**, and 566 of them with only `pytest` installed; plus **18** frontend tests including an accessibility pass |
 | Kernel | `praetor/` imports nothing outside the standard library, and nothing from the web layer |
 | Live | https://praetor-836128159455.asia-south1.run.app · `/app` is the three-tab UI |
 | Rules baseline | precision 0.800 · recall 0.963 · **F1 0.874** on 350 invoices, 5 layouts |
@@ -257,7 +257,11 @@ benchmark" actually requires.
 
 1. Open the Vertex support case — the block is Google's, not ours.
 2. Approve spend beyond ~₹5,000 of credit.
-3. Decide whether Rule 4 ships on.
+3. Decide whether Rule 4 ships on. **Now measured** (`FINDINGS.md` §27): on this
+   corpus it takes autonomy from 27.7% to **0.0%** and prevents zero wrong resolves,
+   because every one of the 18 it removes was correct. Recommendation: leave it off,
+   keep the flag, and re-measure on a corpus that has purchase orders behind its
+   exceptions.
 4. Record the demo video.
 5. Publish the blog and social post.
 6. Submit on Devpost.

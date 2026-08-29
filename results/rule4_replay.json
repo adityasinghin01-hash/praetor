@@ -1,0 +1,345 @@
+{
+ "exceptions": 65,
+ "published_resolved": 18,
+ "published_touches": 47,
+ "rule4": {
+  "as eval/run_adjudication.py calls it -- no record, so R4 cannot fire": {
+   "counts": {
+    "escalate": 65
+   },
+   "flipped": [
+    {
+     "doc_id": "V003_003",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "DUPLICATE_INVOICE"
+     ]
+    },
+    {
+     "doc_id": "V004_010",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "TAX_RATE_MISMATCH"
+     ]
+    },
+    {
+     "doc_id": "V004_012",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "DUPLICATE_INVOICE"
+     ]
+    },
+    {
+     "doc_id": "V007_007",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "TAX_RATE_MISMATCH"
+     ]
+    },
+    {
+     "doc_id": "V009_011",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "DUPLICATE_INVOICE"
+     ]
+    },
+    {
+     "doc_id": "V010_004",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "TAX_RATE_MISMATCH"
+     ]
+    },
+    {
+     "doc_id": "V012_008",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "TAX_RATE_MISMATCH"
+     ]
+    },
+    {
+     "doc_id": "V013_004",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "TAX_RATE_MISMATCH"
+     ]
+    },
+    {
+     "doc_id": "V014_012",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "CURRENCY_MISMATCH"
+     ]
+    },
+    {
+     "doc_id": "V016_007",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "ADDRESS_MISMATCH"
+     ]
+    },
+    {
+     "doc_id": "V017_011",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "TAX_RATE_MISMATCH"
+     ]
+    },
+    {
+     "doc_id": "V020_005",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "ADDRESS_MISMATCH"
+     ]
+    },
+    {
+     "doc_id": "V021_003",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "TAX_RATE_MISMATCH"
+     ]
+    },
+    {
+     "doc_id": "V021_005",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "AMOUNT_OUT_OF_RANGE"
+     ]
+    },
+    {
+     "doc_id": "V021_012",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "DUPLICATE_INVOICE"
+     ]
+    },
+    {
+     "doc_id": "V022_003",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "AMOUNT_OUT_OF_RANGE"
+     ]
+    },
+    {
+     "doc_id": "V023_006",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "ADDRESS_MISMATCH"
+     ]
+    },
+    {
+     "doc_id": "V023_008",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "TAX_RATE_MISMATCH"
+     ]
+    }
+   ]
+  },
+  "with the invoice record supplied, so all four rules can fire": {
+   "counts": {
+    "escalate": 65
+   },
+   "flipped": [
+    {
+     "doc_id": "V003_003",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "DUPLICATE_INVOICE"
+     ]
+    },
+    {
+     "doc_id": "V004_010",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "TAX_RATE_MISMATCH"
+     ]
+    },
+    {
+     "doc_id": "V004_012",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "DUPLICATE_INVOICE"
+     ]
+    },
+    {
+     "doc_id": "V007_007",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "TAX_RATE_MISMATCH"
+     ]
+    },
+    {
+     "doc_id": "V009_011",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "DUPLICATE_INVOICE"
+     ]
+    },
+    {
+     "doc_id": "V010_004",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "TAX_RATE_MISMATCH"
+     ]
+    },
+    {
+     "doc_id": "V012_008",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "TAX_RATE_MISMATCH"
+     ]
+    },
+    {
+     "doc_id": "V013_004",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "TAX_RATE_MISMATCH"
+     ]
+    },
+    {
+     "doc_id": "V014_012",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "CURRENCY_MISMATCH"
+     ]
+    },
+    {
+     "doc_id": "V016_007",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "ADDRESS_MISMATCH"
+     ]
+    },
+    {
+     "doc_id": "V017_011",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "TAX_RATE_MISMATCH"
+     ]
+    },
+    {
+     "doc_id": "V020_005",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "ADDRESS_MISMATCH"
+     ]
+    },
+    {
+     "doc_id": "V021_003",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "TAX_RATE_MISMATCH"
+     ]
+    },
+    {
+     "doc_id": "V021_005",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "AMOUNT_OUT_OF_RANGE"
+     ]
+    },
+    {
+     "doc_id": "V021_012",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "DUPLICATE_INVOICE"
+     ]
+    },
+    {
+     "doc_id": "V022_003",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "AMOUNT_OUT_OF_RANGE"
+     ]
+    },
+    {
+     "doc_id": "V023_006",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "ADDRESS_MISMATCH"
+     ]
+    },
+    {
+     "doc_id": "V023_008",
+     "was": "resolve",
+     "now": "escalate",
+     "why": "no pre-authorised rule holds for this exception",
+     "codes": [
+      "TAX_RATE_MISMATCH"
+     ]
+    }
+   ]
+  }
+ }
+}

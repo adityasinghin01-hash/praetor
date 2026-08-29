@@ -98,7 +98,8 @@ def main() -> None:
         d = evaluate(rec, pattern)
         if d.verdict is Verdict.EXCEPTION:
             amount = _amount(rec.get("amount_total"))
-            flagged.append((rec.doc_id, d.findings, pattern, context_spans(ann), amount))
+            flagged.append((rec.doc_id, d.findings, pattern, context_spans(ann),
+                            amount, rec))
 
     if args.limit:
         flagged = flagged[: args.limit]
@@ -106,11 +107,14 @@ def main() -> None:
 
     # 2. agent pass — one call each
     with out_path.open("a") as fh:
-        for doc_id, findings, pattern, ctx, amount in flagged:
+        for doc_id, findings, pattern, ctx, amount, rec in flagged:
             if doc_id in done:
                 continue
+            # The record is passed because Rule 4's R4 reads it. Without it that rule
+            # cannot fire at all, so --require-rule would run a quarter of its own rule
+            # set short and nobody would see it.
             a = adjudicate(findings, pattern, ctx, models=models, invoice_amount=amount,
-                           require_rule=args.require_rule)
+                           record=rec, require_rule=args.require_rule)
             row = {"doc_id": doc_id, "decision": a.decision,
                    "agent_decision": a.agent_decision, "overridden": a.overridden,
                    "override_reason": a.override_reason,

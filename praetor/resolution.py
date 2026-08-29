@@ -91,6 +91,14 @@ def _r2_known_reissue(findings, record, pattern, context, register, invoice_amou
         return False, "no invoice history for this supplier"
     known = {str(n).strip().upper() for n in pattern.seen_invoice_numbers}
     current = (record.get("invoice_number") or "").strip().upper()
+    if not current:
+        # Without this invoice's own number there is no way to tell a reissue citing a
+        # PRIOR invoice from one citing ITSELF -- and a document that is its own evidence
+        # is exactly what this file exists to refuse. Measured: called with an empty
+        # record, this rule resolved 4 duplicate-invoice exceptions that it refuses once
+        # the record is supplied. Failing closed here rather than trusting every caller
+        # to pass a record, because one of them did not.
+        return False, "no invoice number on the record to compare a citation against"
     for line in context:
         for m in _INVOICE_REF.finditer(line or ""):
             ref = m.group(1).strip().upper()

@@ -2044,3 +2044,81 @@ broken measurement.** It does, 50 of 50.
 
 The test that pins it strips comments before scanning the source, because a guard in this
 repo has already passed by matching its own explanatory comment.
+
+---
+
+## 27. Rule 4 costs every resolve on this corpus, measured without spending anything
+
+Rule 4 ([§13](#13-rule-4-the-agent-may-point-at-a-reason-never-author-one)) has been off by
+default and unmeasured since it was written, because turning it on changes outcomes and
+[§6](#6-adjudication-28-fewer-human-touches-and-no-wrong-resolutions)'s published 28% was
+measured without it. The re-measurement needed ~65 hosted calls against a free tier of 20
+per day ([§4](#4-operational-facts)), so it kept not happening.
+
+It did not need them. **The agent's vote is the only part of an adjudication that costs
+money**, and all 65 votes from that run are in `results/adjudication.jsonl`. Everything
+else — the findings, the supplier pattern, the context spans, the amount, the record — is
+rebuilt from the frozen corpus by the same functions the harness uses, and the post-agent
+gate is `exception_agent.gate_decision`, imported rather than copied.
+
+Reproduce: `python eval/replay_rule4.py`. **No model is called.**
+
+### The check that makes the answer worth anything
+
+Replayed with Rule 4 **off**, every one of the 65 decisions comes back identical to the one
+the hosted run recorded. That is asserted before any Rule 4 number is printed, and the
+script exits non-zero if it fails — a replay that cannot reconstruct the published run has
+nothing to say about a variant of it.
+
+### The result
+
+| | exceptions | resolved | human touches | autonomy |
+|---|---:|---:|---:|---:|
+| published, Rule 4 **off** (§6) | 65 | 18 | 47 | **27.7%** |
+| Rule 4 **on** | 65 | **0** | **65** | **0.0%** |
+
+**Rule 4 turns the adjudicator off on this corpus.** All 18 resolves become escalations,
+and §6 reports those 18 at **precision 1.000** — every one was correct. So on this corpus
+Rule 4 costs 18 correct automated decisions and prevents zero incorrect ones.
+
+That is not an argument that the rule is wrong. It is an argument about *this corpus*. The
+exceptions here are tax-rate, currency and duplicate-invoice cases explained by a note on
+the invoice, and Rule 4 exists precisely to stop a note from carrying a decision. It is
+aimed at a hole §8 named and could not close — *"this variance was agreed on the call last
+Tuesday"* — and this corpus contains no successful instance of that hole, because the one
+document that claims unverifiable authority (`V014_009`) is already caught by
+`praetor/authority.py`.
+
+**Read plainly: Rule 4 buys protection against an attack this corpus does not contain, at
+the cost of every removal the agent makes.** Shipping it on would leave a system whose
+agent never resolves anything, described by a document reporting 28%.
+
+### Two defects the replay found in the thing it was measuring
+
+**R2 passed on missing input.** `_r2_known_reissue` accepts a document that cites a prior
+invoice this client has already received, and excludes self-citation with `ref != current`,
+where `current` is this invoice's own number. `eval/run_adjudication.py` passed **no
+record**, so `current` was the empty string, the guard never matched, and **a reissue citing
+itself counted as evidence** — 4 duplicate-invoice exceptions resolved on it. A document
+being its own justification is the exact thing this file exists to refuse.
+
+Fixed in the rule rather than in the caller: with no invoice number on the record, R2 now
+fails closed. `tests/test_resolution_rules.py` asserts all three cases — empty record
+refused, genuine prior citation accepted, self-citation refused.
+
+**R4 could never fire.** `_r4_matches_supplier_record` reads the record too. The same
+missing argument meant a quarter of a four-rule closed set was unreachable, and nothing in
+the output would have shown it. The harness now passes the record, and a test asserts it
+does.
+
+Both defects pointed the same way — Rule 4 measured through that harness would have
+reported 4 resolves instead of 0, and the 4 would have been the vacuous ones.
+
+### What is still not measured
+
+This is a replay of one run's votes, not a fresh run. It cannot show whether the agent
+would have voted differently had Rule 4 been in the prompt, and it should not: Rule 4 is
+applied *after* the agent by design, so that the guarantee does not depend on the agent
+knowing about it. It also says nothing about a corpus whose exceptions have purchase orders
+behind them, which is the case Rule 4 is actually built for — R1 verified 0 documents here
+because only one document in the corpus cites an order the register holds.

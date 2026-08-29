@@ -195,6 +195,9 @@ scored.
 The attacker accounts are synthetic. The IBAN-shaped ones carry check digits that are not
 computed, so they are invalid as IBANs by construction and belong to no institution.
 
-> **Licence: not yet set.** This repository has no `LICENSE` file, and a benchmark without
-> one is not released in any meaningful sense — nobody can use it. Choosing one is the
-> repository owner's decision, not a detail to be filled in here.
+**Licence: Apache-2.0**, the same as the rest of the repository — see `LICENSE`. Code and
+cases both. It grants patent rights explicitly, which matters for something meant to be
+cited and built on.
+
+If you use VSB, cite the repository and state which tier and which `vsb.sha256` you
+scored, so a number can be traced to the exact bytes it came from.
