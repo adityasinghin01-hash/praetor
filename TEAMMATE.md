@@ -47,9 +47,14 @@ because you own explaining these numbers, but do not start running them:
 - **Task B — MEASURED.** (Section 7) Extraction accuracy is in `FINDINGS.md` §10.
 - **Task C — MEASURED.** (Section 7b) The adjudication numbers are in `FINDINGS.md` §6.
 
-**So what is actually left for you:** the Devpost form (`docs/SUBMISSION.md` is
-paste-ready), and being able to defend any number a judge asks about. Every figure has a
-command next to it in `FINDINGS.md` — run them, so you have seen them come out yourself.
+**So what is actually left for you:** being able to defend any number a judge asks about.
+Every figure has a command next to it in `FINDINGS.md` — run them, so you have seen them
+come out yourself.
+
+Nothing written for an audience lives in this repo. The blog post, the social post, the
+demo script and the Devpost text are all written fresh at the moment they are posted,
+against whatever `FINDINGS.md` says that day — a draft sitting in `docs/` goes stale
+silently and gets published anyway.
 
 You do not touch the agents, the security code, Cloud Run or the frontend.
 

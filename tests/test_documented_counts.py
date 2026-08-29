@@ -1,7 +1,7 @@
 """The test count printed in the documents must be the test count that exists.
 
-Six documents quote it — README, TEAMMATE, SUBMISSION twice over, the architecture
-diagram. It has gone stale three times in two days, every time because somebody (me) added
+Four documents quote it — README, TEAMMATE twice over, the architecture diagram and
+the plan. It has gone stale three times in two days, every time because somebody (me) added
 tests and did not chase every file. It is a small lie each time, and it sits directly
 beside the numbers that matter, which is what makes it worth automating rather than
 remembering.
@@ -17,8 +17,7 @@ import pytest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 # Files that quote the number, and the shapes they quote it in.
-DOCUMENTS = ["README.md", "TEAMMATE.md", "docs/SUBMISSION.md", "docs/architecture.html",
-             "docs/PLAN.md"]
+DOCUMENTS = ["README.md", "TEAMMATE.md", "docs/architecture.html", "docs/PLAN.md"]
 CLAIM = re.compile(
     r"(\d{2,5})\s*(?:passing tests|tests pass|tests hold|tests are|passed`|tests</span>)")
 

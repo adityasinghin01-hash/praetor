@@ -255,7 +255,9 @@ benchmark" actually requires.
 
 ## What only Aditya can do
 
-1. Open the Vertex support case — the block is Google's, not ours.
+1. ~~Open the Vertex support case.~~ **Dropped 29 Aug.** It was gating three things
+   and all three resolved without it: 3.7 was dropped, Rule 4 is measured (§27), and the
+   benchmark's reference runs are on-device by design. A card may be tried instead.
 2. Approve spend beyond ~₹5,000 of credit.
 3. Decide whether Rule 4 ships on. **Now measured** (`FINDINGS.md` §27): on this
    corpus it takes autonomy from 27.7% to **0.0%** and prevents zero wrong resolves,
@@ -266,8 +268,17 @@ benchmark" actually requires.
 5. Publish the blog and social post.
 6. Submit on Devpost.
 
-Optional: request DocILE access (a human has to ask), and decide on 20 September whether to
-tear the cloud down.
+**Nothing written for an audience lives in this repo.** The blog post, the social post,
+the demo script and the Devpost text are written fresh at the moment they are posted,
+against whatever `FINDINGS.md` says that day. Drafts of those four used to sit in `docs/`
+and were a phase behind the code within a week — a stale draft in a repo does not announce
+itself, it just gets published. Ask for the text when you are about to post it.
+
+The order agreed 29 Aug: **finish and test the system first, then the frontend, then the
+demo video, then the submission.**
+
+Optional: request DocILE access (a human has to ask). The teardown decision is deferred
+until the hackathon results are out; credit expires ~25 Sept.
 
 ## What no amount of building fixes
 
