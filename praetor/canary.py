@@ -9,7 +9,7 @@ tainted -- which is exactly what the resolver was built to allow.
 This file closes the half of that gap which is decidable without reading anything.
 
 A bank account is printed in a payment block. It is not printed in a free-text note, on
-any real invoice, ever. So a `bank_account` resolved from a span the document itself
+any real invoice, ever. The same is true of the invoice total. So a `bank_account` resolved from a span the document itself
 labels as prose is not a suspicious value -- it is a structurally impossible one, and it
 stays impossible no matter how convincing the sentence is. That is the property worth
 having: **the check never reads the note, so nothing written in the note can change the
@@ -33,7 +33,7 @@ from praetor.types import Finding, InvoiceRecord
 
 # Fields where the origin is worth constraining. These are the ones where being wrong
 # moves money rather than raising a query.
-GUARDED_FIELDS: frozenset[str] = frozenset({"bank_account"})
+GUARDED_FIELDS: frozenset[str] = frozenset({"bank_account", "amount_total"})
 
 # Span kinds a guarded field may legitimately be lifted from, by the document's own
 # labelling. Keyed by our record attribute, valued in DocILE-style fieldtypes -- the
@@ -44,7 +44,21 @@ GUARDED_FIELDS: frozenset[str] = frozenset({"bank_account"})
 # this file exists is that the attacker chooses where their text sits.
 LEGITIMATE_ORIGINS: dict[str, frozenset[str]] = {
     "bank_account": frozenset({"payment_iban", "payment_bank_account"}),
+    # The second field that moves money. A wrong vendor name raises a query; a wrong
+    # total pays the wrong amount to the right account, and it is the quieter fraud --
+    # nobody notices a supplier being overpaid 8% the way they notice an unknown account.
+    #
+    # `line_item_amount` is deliberately NOT permitted. A total lifted from one line of
+    # the table is wrong by construction, and until `constructed_v2` this corpus had no
+    # line items, so the mistake could not even be expressed (FINDINGS §28).
+    "amount_total": frozenset({"amount_total"}),
 }
+
+# Deliberately NOT guarded: vendor_name, vendor_address, invoice_number, currency,
+# tax_rate. The origin check costs a human touch every time it fires, and on those
+# fields being wrong raises a query rather than moving money. Guarding everything would
+# buy very little and spend the one thing this system is short of, which is a person's
+# attention. This list is the judgement, and it is here to be argued with.
 
 
 def check(record: InvoiceRecord, span_kinds: dict[str, str]) -> list[Finding]:

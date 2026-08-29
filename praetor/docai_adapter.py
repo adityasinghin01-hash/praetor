@@ -101,6 +101,14 @@ NEVER_MAPPED: frozenset[str] = frozenset({
 # That is the right direction to be wrong in, and it is why this map may stay short.
 SPAN_KIND_MAP: dict[str, str] = {
     "supplier_iban": "payment_iban",
+    # Added when praetor/canary.py started guarding `amount_total` as well. Document AI
+    # calls the total `total_amount`; the kernel's vocabulary is `amount_total`, and
+    # without this line every clean Document AI invoice tripped IMPOSSIBLE_ORIGIN on the
+    # total -- the identical defect to `supplier_iban`, on the next field to be guarded.
+    #
+    # **Guarding a new field means auditing this map.** That is the rule this table has
+    # now taught twice.
+    "total_amount": "amount_total",
 }
 
 

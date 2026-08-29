@@ -308,3 +308,29 @@ def test_the_document_hash_is_stable_across_processes():
                              text=True, env=env, check=True)
         seen.add(out.stdout.strip())
     assert len(seen) == 1, f"doc_hash changed with the hash seed: {seen}"
+
+
+def test_every_guarded_field_is_reachable_through_the_document_ai_vocabulary():
+    """Guarding a new field means auditing SPAN_KIND_MAP, and this is the test that says so.
+
+    Twice now the same defect has shipped: Document AI calls the account `supplier_iban`
+    where the kernel says `payment_iban` (FINDINGS §20, a 100% false-positive rate on the
+    only path that reads real PDFs), and then calls the total `total_amount` where the
+    kernel says `amount_total` -- which fired the moment `amount_total` joined
+    GUARDED_FIELDS.
+
+    Both were a translation table that had not kept up with the allowlist. This checks
+    them against each other directly, so the third one fails here instead of in production.
+    """
+    from praetor.canary import GUARDED_FIELDS, LEGITIMATE_ORIGINS
+    from praetor.docai_adapter import FIELD_MAP, SPAN_KIND_MAP
+
+    for field in sorted(GUARDED_FIELDS):
+        docai_types = [t for t, attr in FIELD_MAP.items() if attr == field]
+        assert docai_types, f"Document AI cannot produce {field} at all"
+        allowed = LEGITIMATE_ORIGINS[field]
+        reachable = [t for t in docai_types if SPAN_KIND_MAP.get(t, t) in allowed]
+        assert reachable, (
+            f"Document AI labels {field} as {docai_types}, none of which translates into "
+            f"{sorted(allowed)}. Every clean invoice on the Document AI path will trip "
+            f"IMPOSSIBLE_ORIGIN on {field}. Add the entry to SPAN_KIND_MAP.")

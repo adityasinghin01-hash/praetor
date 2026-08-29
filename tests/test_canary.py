@@ -121,3 +121,59 @@ def test_injected_count_agrees_with_the_truth_file():
             (root / "data" / "constructed_truth.jsonl").read_text().splitlines() if l.strip()]
     _, injected = _corpus_populations()
     assert sum(1 for r in rows if r.get("injected")) == injected == 20
+
+
+# ----------------------------------------------- two labels on one region, found on real paper
+
+def test_an_unclassified_label_never_overwrites_a_real_one():
+    """Real annotations list a field twice: once with its type, and again as raw OCR
+    text labelled `other`. All 300 SROIE receipts do it, on at least one region each.
+
+    `span_kinds_of` used to build a plain dict, so whichever came last won -- almost
+    always `other`. The canary then saw a correctly-labelled total arriving from what it
+    believed was prose and fired on **289 of 300 real receipts**, a 96% false-positive
+    rate, while scoring 0 on the synthetic corpus, which has no colliding boxes.
+    """
+    from praetor.docile_adapter import span_kinds_of
+
+    bbox = [0.1, 0.2, 0.3, 0.25]
+    ann = {"field_extractions": [
+        {"fieldtype": "amount_total", "text": "9.00", "page": 0, "bbox": bbox},
+        {"fieldtype": "other", "text": "9.00", "page": 0, "bbox": bbox},
+    ]}
+    kinds = span_kinds_of(ann)
+    assert set(kinds.values()) == {"amount_total"}, kinds
+
+    # order must not matter -- that was the whole bug
+    ann["field_extractions"].reverse()
+    assert set(span_kinds_of(ann).values()) == {"amount_total"}
+
+
+def test_two_different_real_labels_on_one_region_fail_closed():
+    """`other` is the parser saying nothing. Two genuine labels on one box is the parser
+    saying two contradictory things, and on a field that moves money that has to refuse
+    rather than pick one."""
+    from praetor.canary import LEGITIMATE_ORIGINS
+    from praetor.docile_adapter import span_kinds_of
+
+    bbox = [0.1, 0.2, 0.3, 0.25]
+    ann = {"field_extractions": [
+        {"fieldtype": "amount_total", "text": "9.00", "page": 0, "bbox": bbox},
+        {"fieldtype": "payment_iban", "text": "9.00", "page": 0, "bbox": bbox},
+    ]}
+    kind = next(iter(span_kinds_of(ann).values()))
+    assert kind not in LEGITIMATE_ORIGINS["amount_total"]
+    assert kind not in LEGITIMATE_ORIGINS["bank_account"]
+
+
+def test_the_guarded_fields_are_the_ones_that_move_money():
+    """The list is a judgement and it is worth stating. A wrong vendor name raises a
+    query; a wrong total pays the wrong amount to the right account."""
+    from praetor.canary import GUARDED_FIELDS, LEGITIMATE_ORIGINS
+
+    assert GUARDED_FIELDS == {"bank_account", "amount_total"}
+    assert set(LEGITIMATE_ORIGINS) == GUARDED_FIELDS, (
+        "a guarded field with no allowlist fires on everything; an allowlist for an "
+        "unguarded field is never consulted")
+    assert "line_item_amount" not in LEGITIMATE_ORIGINS["amount_total"], (
+        "a total lifted from one line of the table is wrong by construction")

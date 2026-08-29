@@ -2237,3 +2237,98 @@ gains an attacker nothing, because nothing recognises it as a claim. But a *legi
 German approval is equally invisible, so on a non-English corpus the authority rule and R1
 are dead code that reports success by staying quiet. Nothing in the system says it only
 works in English. Now something does.
+
+---
+
+## 29. Real paper: a 96% false-positive rate that only real documents could show
+
+`FINDINGS.md` has 28 sections and not one of them measures anything on a document this
+project did not generate. That is the largest gap in the whole repository, and 300 real
+scanned receipts have been sitting in `data/sroie_annotations` the entire time, used to
+sanity-check the span pipeline and never scored.
+
+They are real OCR output: **15,754 unclassified text spans across 300 receipts, about 52
+per document**, against 8 to 10 clean ones in the synthetic corpus.
+
+Reproduce: `python eval/run_canary.py --annotations data/sroie_annotations`
+
+### What happened when the origin check met them
+
+Two changes landed together. `praetor/canary.py` now guards **`amount_total` as well as
+`bank_account`** — the two fields where being wrong moves money, where a wrong vendor name
+merely raises a query. On both synthetic corpora that changed nothing: **0 false positives
+on 350, twice.**
+
+On real receipts it fired on **289 of 300. A false-positive rate of 0.9633.**
+
+| corpus | documents | canary false positives |
+|---|---:|---:|
+| `data/constructed` | 350 | 0 |
+| `data/constructed_v2` | 350 | 0 |
+| **SROIE, real scans** | 300 | **289 — 0.9633** |
+
+### The cause: two labels on one region, and the last one won
+
+Real annotations list a field **twice** — once with its type, and again as raw OCR text
+labelled `other`:
+
+```
+p0:0.8877_0.5884_0.9568_0.6051   [('amount_total', '9.00'), ('other', '9.00')]
+p0:0.3564_0.3672_0.7387_0.3840   [('invoice_date', '25/12/2018'), ('other', '25/12/2018 8:13:39 PM')]
+```
+
+**All 300 of 300 receipts do this, on at least one region each.**
+`praetor/docile_adapter.span_kinds_of` built `{span_id: fieldtype}` with a plain loop, so
+whichever entry came last won — and it is almost always `other`. The canary then saw a
+correctly labelled total arriving from a span it believed was prose, and refused it.
+
+The synthetic corpus has no colliding boxes, so this scored a perfect zero for as long as
+nobody ran it on real paper.
+
+**Fixed by combining rather than overwriting.** `other` and the empty string are the parser
+declining to classify, and never win. Exactly one real label wins. Two *different* real
+labels are genuinely ambiguous, and ambiguity on a field that moves money fails closed —
+the span is marked `__ambiguous__`, which is in no allowlist. After the fix:
+
+| corpus | before | after |
+|---|---:|---:|
+| SROIE, real scans | 289 / 300 | **0 / 300** |
+| `data/constructed` | 0 / 350 | 0 / 350 |
+| `data/constructed_v2` | 0 / 350 | 0 / 350 |
+
+and the attack side is unchanged — **100% caught on all three corpora.**
+
+### And the same defect again, on the next field
+
+Extending the guard to `amount_total` immediately broke the Document AI path:
+
+```
+IMPOSSIBLE_ORIGIN  amount_total came from a 'total_amount' span;
+                   it can legitimately come from amount_total
+```
+
+**Document AI calls the total `total_amount`; the kernel's vocabulary says
+`amount_total`.** That is character for character the defect
+[§20](#20-a-pdf-in-a-bucket-becomes-a-queue-entry-in-645-seconds-and-the-kernel-never-knew)
+records — `supplier_iban` against `payment_iban`, a 100% false-positive rate on the only
+path that reads real PDFs — arriving again on the next field to be guarded.
+
+The design already had the right answer: each adapter translates into one kernel
+vocabulary, in `docai_adapter.SPAN_KIND_MAP`. The table simply had one entry, because only
+one field was guarded. **Guarding a field means auditing that table**, and a test now
+checks the two against each other directly, so the third instance fails in CI rather than
+in production. Removing the entry makes it fail with the reason spelled out.
+
+### What this is, and what it is not
+
+**It is** the first measurement in this repository on documents nobody here generated, and
+it found a defect worth 96 percentage points that three corpora and 600 tests had not.
+
+**It is not** the real-invoice test this project still needs. SROIE receipts are receipts:
+they carry a total, a date and a vendor name, and **no bank account at all**. Nothing here
+exercises the privileged field on real paper, because no real document in this repository
+has one. The extraction path, the second path and the payment gate remain measured only on
+synthetic documents.
+
+Twenty real invoices with payment details would close that, and no amount of generating
+substitutes for them.

@@ -90,6 +90,11 @@ def spans_of(annotation: dict, doc_hash: str) -> dict[str, str]:
     return out
 
 
+# A label a parser emits when it did not classify a region. It is the absence of a
+# label, not a claim about one, and it must not be able to overwrite a real one.
+UNCLASSIFIED = {"", "other"}
+
+
 def span_kinds_of(annotation: dict) -> dict[str, str]:
     """span_id -> the document's own field type for that span.
 
@@ -97,11 +102,40 @@ def span_kinds_of(annotation: dict) -> dict[str, str]:
     uses it to ask whether a value arrived from a place it could legitimately come
     from -- a question that can be answered without reading a single character of the
     span, which is why an attacker cannot write their way past it.
+
+    **One region can carry more than one label, and this used to be resolved by
+    whichever came last.** Real annotations list a field twice: once with its type and
+    again as raw OCR text labelled `other`. Every one of the 300 SROIE receipts does it.
+    A plain dict therefore recorded `other` for the total on almost every real document,
+    and the canary fired on 289 of 300 -- a 96% false-positive rate on real paper, and
+    zero on the synthetic corpus, which has no colliding boxes. It is the same defect
+    as the `supplier_iban` mismatch in FINDINGS §20, found the same way: by running on
+    documents we did not generate.
+
+    So the labels for one span are combined rather than overwritten:
+
+      * `other` and the empty string are the parser saying nothing, and never win;
+      * exactly one real label wins;
+      * two DIFFERENT real labels are genuinely ambiguous, and ambiguity on a field
+        that moves money has to fail closed, so the span is marked unknown and the
+        canary fires.
     """
-    out: dict[str, str] = {}
+    seen: dict[str, set[str]] = {}
     for fld in annotation.get("field_extractions", []):
         sid = _span_id(int(fld.get("page", 0)), fld.get("bbox", [0, 0, 0, 0]))
-        out[sid] = str(fld.get("fieldtype", "") or "")
+        seen.setdefault(sid, set()).add(str(fld.get("fieldtype", "") or ""))
+
+    out: dict[str, str] = {}
+    for sid, labels in seen.items():
+        real = {l for l in labels if l not in UNCLASSIFIED}
+        if len(real) == 1:
+            out[sid] = next(iter(real))
+        elif not real:
+            out[sid] = "other"
+        else:
+            # Ambiguous. `__ambiguous__` is in no allowlist, so the origin check
+            # refuses it rather than picking one.
+            out[sid] = "__ambiguous__"
     return out
 
 
