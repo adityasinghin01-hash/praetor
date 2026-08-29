@@ -81,6 +81,13 @@ th{color:var(--dim);font-weight:500;font-size:11px;text-transform:uppercase;lett
      border-radius:4px;padding:1px 5px;font-size:11.5px}
 .err{color:var(--stop);margin:10px 0}
 .hide{display:none}
+/* `.session`, not `.who`: `.who` is the supplier's name inside a row (see `.row .who`
+   above), and styling it here put a rule under every supplier on the page. Caught in a
+   screenshot, which is the second time a layout defect in this file has only been
+   visible that way. */
+.session{display:inline-flex;gap:.5rem;align-items:center;font-size:.82rem}
+.session .chip{border:1px solid #333;border-radius:999px;padding:0 .5rem;font-size:.75rem}
+.session a{color:inherit}
 </style>
 
 <header>
@@ -136,6 +143,18 @@ async function post(path, body) {
   if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
   return data;
 }
+// A timestamp a person reads. The audit table printed `2026-08-29T12:21:14+00:00`
+// straight onto the screen -- correct, and not how anybody writes a time.
+function when(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  const day = d.toLocaleDateString(undefined,
+    { day: "numeric", month: "short", year: "numeric" });
+  const time = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  return `${day}, ${time}`;
+}
+
 const fail = (host, e) => {
   host.innerHTML = "";
   if (e instanceof NotSignedIn) {
@@ -341,7 +360,7 @@ async function loadStopped() {
   host.append(el("h2", null, "Every decision, and who made it"));
   host.append(table(["What happened", "Supplier", "Decided by", "When", "What the system said"],
     d.decisions.map(x => [x.outcome_label, x.supplier, x.decided_by || "nobody yet",
-      x.decided_at || "", x.system_said])));
+      when(x.decided_at), x.system_said])));
 
   const a = d.attacks || {};
   host.append(el("h2", null, "Attacks people have tried on this system"));
@@ -473,6 +492,27 @@ function show(name) {
   LOADERS[name]();
   history.replaceState(null, "", `#${name}`);
 }
+// Who you are, what you may do, and whose books you are in -- in the header, on every
+// tab. This page showed none of it. For a system whose claim is that approving a payment
+// records who you are, not naming the person doing it is the wrong thing to leave out;
+// and with two client companies in the data, an unlabelled queue could be either.
+function showWho(h) {
+  // The header already had an empty `#who` slot. Nobody ever filled it, so the page
+  // never said who was signed in, what they were allowed to do, or whose books they
+  // were looking at -- on a system whose claim is that approving records who you are.
+  const slot = document.getElementById("who");
+  if (!slot) return;
+  slot.innerHTML = ""; slot.className = "session";
+  if (h && h.signed_in) {
+    slot.append(el("span", null, h.user || ""));
+    if (h.role) slot.append(el("span", "chip", h.role));
+    if (h.tenant) slot.append(el("span", null, h.tenant));
+    const out = el("a", null, "sign out"); out.href = "/logout"; slot.append(out);
+  } else {
+    const inn = el("a", null, "sign in"); inn.href = "/login"; slot.append(inn);
+  }
+}
+
 document.querySelectorAll("nav button").forEach(b => b.onclick = () => show(b.dataset.tab));
 
 // Which tab to open on. An explicit #hash always wins. Otherwise: signed in goes to the
@@ -485,8 +525,11 @@ document.querySelectorAll("nav button").forEach(b => b.onclick = () => show(b.da
   // transports and answers `signed_in`; inferring it from a thrown error worked only
   // because an unmatched route happened to 401 before it 404ed.
   let signedIn = true;
-  try { signedIn = (await get("/v1/health")).signed_in !== false; }
-  catch (e) { signedIn = !(e instanceof NotSignedIn); }
+  try {
+    const h = await get("/v1/health");
+    signedIn = h.signed_in !== false;
+    showWho(h);
+  } catch (e) { signedIn = !(e instanceof NotSignedIn); }
   show(signedIn ? "queue" : "break");
 })();
 </script>

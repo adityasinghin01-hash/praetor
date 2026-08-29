@@ -261,14 +261,21 @@ def field_labels() -> dict:
     return {"labels": dict(language.FIELD_LABELS)}
 
 
-def health(signed_in: bool = False) -> dict:
-    """Is the service up, and does this caller have a session?
+def health(signed_in: bool = False, user: str | None = None,
+           role: str | None = None, tenant: str | None = None) -> dict:
+    """Is the service up, who is asking, and whose books are they in?
 
-    `signed_in` is what the page needs: with no session it opens the one tab that works
-    without one, rather than bouncing an anonymous visitor to a sign-in form they did not
-    ask for.
+    `signed_in` is what the page needs to decide which tab to open: with no session it
+    opens the one tab that works without one, rather than bouncing an anonymous visitor
+    to a sign-in form they did not ask for.
+
+    The rest is what the page needs to SHOW. This system's claim is that approving a
+    payment records who you are -- and the page did not say who you were, what you were
+    allowed to do, or which client's queue you were looking at. A reviewer could not tell
+    an approver from a viewer, and a second client's books look identical to the first's.
     """
-    return {"ok": True, "signed_in": bool(signed_in)}
+    return {"ok": True, "signed_in": bool(signed_in),
+            "user": user, "role": role, "tenant": tenant}
 
 
 def gauntlet_placements() -> dict:

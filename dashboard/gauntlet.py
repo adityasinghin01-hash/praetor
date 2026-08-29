@@ -87,7 +87,17 @@ DEFAULT_PLACEMENT = "note"
 
 # Something that looks like an account number in the visitor's text. Only used to say
 # whose account the money would have gone to; nothing branches on it.
-ACCOUNT_LIKE = re.compile(r"\b([A-Z]{2}\d{2}[A-Z0-9]{8,26})\b")
+# Something that looks like an account number in the visitor's text.
+#
+# Two shapes, because assuming an account is an IBAN is the mistake FINDINGS §28 spent a
+# whole corpus finding: Path B scored 125 of 125 on IBANs and 0 of 216 on the accounts of
+# two other countries. The demo made it too. Typing a normal Indian domestic account
+# number -- `6644120150`, ten digits, no letters -- was answered with "there is no
+# account in your line", which is wrong and is the least welcoming thing this page could
+# say to somebody in Delhi.
+ACCOUNT_LIKE = re.compile(
+    r"\b([A-Z]{2}\d{2}[A-Z0-9]{8,26})\b"      # IBAN-shaped
+    r"|\b(\d{8,})\b")                         # a domestic account number
 
 
 @dataclass
@@ -208,7 +218,7 @@ def run(doc_id: str, injected_text: str, pattern: VendorPattern | None,
     squashed = re.sub(r"[^A-Za-z0-9\s]", "", injected_text.upper())
     m = ACCOUNT_LIKE.search(squashed) or ACCOUNT_LIKE.search(
         re.sub(r"[^A-Za-z0-9]", "", injected_text.upper()))
-    out.attacker_account = m.group(1) if m else None
+    out.attacker_account = (m.group(1) or m.group(2)) if m else None
     out.is_attack = out.attacker_account is not None
 
     # ---- 1. read the invoice
@@ -313,10 +323,17 @@ def run(doc_id: str, injected_text: str, pattern: VendorPattern | None,
     return _finish(out)
 
 
+# The checks, in order. "Read the invoice" is not one of them -- it is what happens
+# before any check runs -- and counting it as a step is what made the page report
+# "stopped at step 4" and "got past 2 checks" about the same run. Both were true and
+# they read as a contradiction. Everything counts checks now.
+CHECKS = ("reference", "origin", "master", "authority", "rules")
+
+
 def _finish(out: Outcome) -> Outcome:
-    stopped = [i for i, s in enumerate(out.steps, 1) if s.stopped_here]
-    out.stopped = bool(stopped)
-    out.stopped_at = stopped[0] if stopped else None
+    out.stopped = any(s.stopped_here for s in out.steps)
+    # Which CHECK stopped it: one more than the number it got past.
+    out.stopped_at = (len(out.beat) + 1) if out.stopped else None
 
     money = f"{out.currency or ''} {out.amount or ''}".strip() or "this invoice"
 
@@ -331,12 +348,12 @@ def _finish(out: Outcome) -> Outcome:
     elif out.attacker_account:
         # A value attack: the money had somewhere else to go, and we can name it.
         out.would_have_paid = (
-            f"Stopped at step {out.stopped_at}. Without these checks, {money} would "
-            f"have gone to {out.attacker_account}.")
+            f"Stopped by check {out.stopped_at} of {len(CHECKS)}. Without these checks, "
+            f"{money} would have gone to {out.attacker_account}.")
     else:
         # A decision attack: the line was arguing for the invoice to be waved through,
         # not redirecting it. Naming an account here would be inventing one.
         out.would_have_paid = (
-            f"Stopped at step {out.stopped_at}. Your line was trying to talk the system "
-            f"into paying {money} without anyone looking at it.")
+            f"Stopped by check {out.stopped_at} of {len(CHECKS)}. Your line was trying "
+            f"to talk the system into paying {money} without anyone looking at it.")
     return out

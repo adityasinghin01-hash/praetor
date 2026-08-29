@@ -298,7 +298,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, api.field_labels())
 
         if path == "/v1/health":
-            return self._json(200, api.health(bool(auth.session_user(conn, self._token()))))
+            who = auth.session_user(conn, self._token())
+            tenant = (q.get("tenant") or [store.DEFAULT_TENANT])[0] if who else None
+            role = db().role_of(conn, who, tenant) if who else None
+            return self._json(200, api.health(bool(who), who, role,
+                                              tenant if role else None))
 
         if path == "/v1/gauntlet/placements":
             return self._json(200, api.gauntlet_placements())

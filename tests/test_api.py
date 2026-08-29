@@ -244,8 +244,9 @@ def test_health_exists_on_both_transports_and_reports_the_session():
     # Both answer the same question; serve.py delegates to api.health, asgi.py builds the
     # same shape inline. What matters is the key, and that it tracks the session.
     from dashboard import api
-    assert api.health(True) == {"ok": True, "signed_in": True}
-    assert api.health(False) == {"ok": True, "signed_in": False}
+    assert api.health(True)["signed_in"] is True
+    assert api.health(False)["signed_in"] is False
+    assert api.health(True)["ok"] is True
     asgi = (root / "dashboard" / "asgi.py").read_text()
     assert "signed_in" in asgi, "the FastAPI transport stopped reporting signed_in"
 
@@ -318,10 +319,50 @@ def test_the_attack_demo_can_actually_be_beaten():
                             placement="note")
     captured = api.gauntlet_run("V000_003", "Bank Account: IN99XXXX66660001",
                                 placement="payment_field")
-    assert note["stopped_at"] == 3, "the note should still be refused on origin"
-    assert captured["stopped_at"] is not None and captured["stopped_at"] > 3, (
+    # `stopped_at` counts checks, not rows on the page: check 2 is the origin check.
+    assert note["stopped_at"] == 2, "the note should still be refused on origin"
+    assert captured["stopped_at"] is not None and captured["stopped_at"] > 2, (
         "labelling the line as the payment field must get past the origin check, or the "
         "demo is unwinnable again")
 
     # an unknown placement must fall back rather than error: this endpoint is anonymous
     assert api.gauntlet_run("V000_003", "x", placement="nonsense")["placement"] == "note"
+
+
+def test_the_page_says_who_is_signed_in_and_what_they_may_do():
+    """The header had an empty `#who` slot that nobody ever filled, so the app never
+    said who you were, what your role was, or whose books you were looking at -- on a
+    system whose central claim is that approving a payment records who you are. With two
+    client companies in the data, an unlabelled queue could have been either of them."""
+    import pathlib
+    from dashboard import api
+
+    h = api.health(True, "reviewer@acme-industries.test", "approver", "acme-industries")
+    assert h["user"] and h["role"] == "approver" and h["tenant"] == "acme-industries"
+    assert api.health(False)["user"] is None
+
+    page = (pathlib.Path(__file__).resolve().parents[1] / "dashboard" / "app.html").read_text()
+    assert "showWho" in page and 'href = "/logout"' in page, "no way to sign out"
+
+
+def test_the_session_banner_does_not_restyle_the_supplier_name():
+    """`.who` was already the supplier's name inside a queue row. Styling a new header
+    element with the same class put a rule under every supplier on the page -- caught in
+    a screenshot, which is the second time a layout defect in this file has been visible
+    only that way (FINDINGS §22 was the first)."""
+    import pathlib
+    import re
+    page = (pathlib.Path(__file__).resolve().parents[1] / "dashboard" / "app.html").read_text()
+    css = page.split("</style>")[0]
+    # `.row .who` is the supplier name and may be styled; a bare `.who{` rule is the bug.
+    assert not re.search(r"(?<![\w.\-]) \.who\s*\{|^\.who\s*\{", css, re.M), (
+        "a bare .who rule is back; it will restyle every supplier name")
+    assert ".session{" in css, "the header banner has no class of its own"
+
+
+def test_the_audit_trail_shows_a_time_a_person_would_write():
+    """`2026-08-29T12:21:14+00:00` is correct and is not how anybody writes a time."""
+    import pathlib
+    page = (pathlib.Path(__file__).resolve().parents[1] / "dashboard" / "app.html").read_text()
+    assert "function when(iso)" in page
+    assert "when(x.decided_at)" in page, "the audit table is printing the raw timestamp"
