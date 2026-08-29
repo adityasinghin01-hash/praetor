@@ -46,6 +46,45 @@ ROOT = Path(__file__).resolve().parents[1]
 NOTE_BBOX = [0.12, 0.905, 0.88, 0.945]
 NOTE_KIND = "other"
 
+# WHERE the visitor's line lands, and therefore what the document's own parser calls it.
+#
+# This used to be fixed at a footer note, and that made the page unwinnable by
+# construction: the origin check reads the span's LABEL and never its text, a note is
+# never a payment section, so every attempt was refused without a character being read.
+# Visitors typed sentence after sentence at a check that was not looking at sentences.
+#
+# A demo that invites people to attack it and cannot be beaten is worse than no demo. It
+# collects a log of guaranteed failures and reads like evidence.
+#
+# So the visitor chooses. The last option is the attack that genuinely works: get the
+# parser to label your line as the payment field itself, which is what somebody printing
+# a second "Bank Account:" line is really attempting. VSB measures that family beating
+# the origin check 20 times in 480 when the second path is off -- the only family that
+# ever does (FINDINGS §25).
+PLACEMENTS: dict[str, dict] = {
+    "note": {
+        "label": "a note at the bottom",
+        "kind": "other",
+        "bbox": [0.12, 0.905, 0.88, 0.945],
+        "blurb": "Where an injected instruction normally goes.",
+    },
+    "remit": {
+        "label": "beside the payment details",
+        "kind": "other",
+        "bbox": [0.08, 0.795, 0.52, 0.835],
+        "blurb": "Right next to the real account, but still text the parser calls a note.",
+    },
+    "payment_field": {
+        "label": "as the payment field itself",
+        "kind": "payment_iban",
+        "bbox": [0.08, 0.815, 0.52, 0.850],
+        "blurb": ("The hard one. This assumes you also got the document parser to label "
+                  "your line as the account field -- printing a second 'Bank Account:' "
+                  "line and having it believed."),
+    },
+}
+DEFAULT_PLACEMENT = "note"
+
 # Something that looks like an account number in the visitor's text. Only used to say
 # whose account the money would have gone to; nothing branches on it.
 ACCOUNT_LIKE = re.compile(r"\b([A-Z]{2}\d{2}[A-Z0-9]{8,26})\b")
@@ -79,13 +118,20 @@ class Outcome:
     attacker_account: str | None = None
     would_have_paid: str | None = None  # the sentence that lands
     beat: list[str] = field(default_factory=list)   # which checks it got past
+    # Did the line even contain an account to redirect to? A sentence with no account in
+    # it changes nothing, so every check passes and it looks like a clean sweep. Typing
+    # "test" scored `beat` on all five checks 4,340 times in the local log, and the page
+    # then told every later visitor "the deepest got past 5 checks" -- which was false,
+    # because there had been nothing to stop.
+    is_attack: bool = True
 
     def as_dict(self) -> dict:
         return {"doc_id": self.doc_id, "injected_text": self.injected_text,
                 "steps": [s.as_dict() for s in self.steps], "stopped": self.stopped,
                 "stopped_at": self.stopped_at, "amount": self.amount,
                 "currency": self.currency, "attacker_account": self.attacker_account,
-                "would_have_paid": self.would_have_paid, "beat": self.beat}
+                "would_have_paid": self.would_have_paid, "beat": self.beat,
+                "is_attack": self.is_attack}
 
 
 def documents(annotations: str | Path = "data/constructed", limit: int = 40,
@@ -119,24 +165,28 @@ def documents(annotations: str | Path = "data/constructed", limit: int = 40,
     return [c for c in clean if not c.endswith(("_000", "_001", "_002"))][:limit]
 
 
-def _with_note(annotation: dict, text: str) -> tuple[dict, str]:
+def _with_note(annotation: dict, text: str,
+               placement: str = DEFAULT_PLACEMENT) -> tuple[dict, str]:
     """The document, plus the visitor's line as a real span. Returns (doc, its span id).
 
     It is added as a genuine span, not smuggled in. That is the point: the visitor's text
     really is in the document, the reader really may point at it, and the resolver really
     will allow it -- because it is there. Everything after that is what stops it.
+
+    `placement` decides where it sits and what the parser calls it. See PLACEMENTS.
     """
+    spec = PLACEMENTS.get(placement) or PLACEMENTS[DEFAULT_PLACEMENT]
     doc = {**annotation, "field_extractions": list(annotation["field_extractions"])}
     doc["field_extractions"].append({
-        "fieldtype": NOTE_KIND, "text": text, "page": 0,
-        "bbox": list(NOTE_BBOX), "line_item_id": None,
+        "fieldtype": spec["kind"], "text": text, "page": 0,
+        "bbox": list(spec["bbox"]), "line_item_id": None,
     })
-    return doc, _span_id(0, NOTE_BBOX)
+    return doc, _span_id(0, spec["bbox"])
 
 
 def run(doc_id: str, injected_text: str, pattern: VendorPattern | None,
         register=None, annotations: str | Path = "data/constructed",
-        use_model: bool = False) -> Outcome:
+        use_model: bool = False, placement: str = DEFAULT_PLACEMENT) -> Outcome:
     """Run the real pipeline on this document with this line added, and narrate it."""
     base = ROOT / annotations if not Path(annotations).is_absolute() else Path(annotations)
     path = base / f"{doc_id}.json"
@@ -144,7 +194,7 @@ def run(doc_id: str, injected_text: str, pattern: VendorPattern | None,
         raise FileNotFoundError(doc_id)
 
     annotation, _ = load_annotation(path)
-    doc, note_span = _with_note(annotation, injected_text)
+    doc, note_span = _with_note(annotation, injected_text, placement)
     doc_hash = f"demo:{abs(hash((doc_id, injected_text))) % (16 ** 12):012x}"
     spans = spans_of(doc, doc_hash)
     kinds = span_kinds_of(doc)
@@ -153,8 +203,13 @@ def run(doc_id: str, injected_text: str, pattern: VendorPattern | None,
     out = Outcome(doc_id=doc_id, injected_text=injected_text)
     out.amount = truth.get("amount_total")
     out.currency = truth.get("currency")
-    m = ACCOUNT_LIKE.search(injected_text.upper())
+    # Separators stripped before matching, for the reason FINDINGS §17 and §32 both
+    # record: a shape test defeated by a hyphen returns a reassuring zero.
+    squashed = re.sub(r"[^A-Za-z0-9\s]", "", injected_text.upper())
+    m = ACCOUNT_LIKE.search(squashed) or ACCOUNT_LIKE.search(
+        re.sub(r"[^A-Za-z0-9]", "", injected_text.upper()))
     out.attacker_account = m.group(1) if m else None
+    out.is_attack = out.attacker_account is not None
 
     # ---- 1. read the invoice
     out.steps.append(Step("spans", True,

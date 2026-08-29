@@ -26,6 +26,7 @@ corrupt earlier entries. Standard library only.
 from __future__ import annotations
 
 import json
+import re
 import os
 import time
 from collections import Counter
@@ -39,18 +40,29 @@ _MAX_BYTES = 32 * 1024 * 1024
 
 
 def record(text: str, doc_id: str, steps_passed: list[str], stopped_at: int | None,
-           stopped: bool, source: str = "web", path: Path | None = None) -> dict:
-    """Log one attempt. Never raises: losing a log line must not break the page."""
+           stopped: bool, source: str = "web", path: Path | None = None,
+           is_attack: bool = True) -> dict:
+    """Log one attempt. Never raises: losing a log line must not break the page.
+
+    `is_attack` is false when the line carried no account to redirect to. Those still
+    get logged -- they are real visitor behaviour and worth knowing about -- but they are
+    **not counted as attempts that beat anything**, because nothing was attempted.
+
+    Without that distinction the headline lied. 4,340 lines reading `test` were logged
+    with every check passed, and the page told each new visitor that the deepest attempt
+    "got past 5 checks". Typing a word with no digits in it is not a defeat.
+    """
     entry = {
         "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "text": (text or "")[:MAX_TEXT],
         "chars": len(text or ""),
         "doc_id": doc_id,
-        "beat": list(steps_passed),      # the column that matters
-        "depth": len(steps_passed),
+        "beat": list(steps_passed) if is_attack else [],
+        "depth": len(steps_passed) if is_attack else 0,
         "stopped": bool(stopped),
         "stopped_at": stopped_at,
         "source": source,
+        "is_attack": bool(is_attack),
     }
     p = Path(path) if path else DEFAULT_PATH
     try:
@@ -91,18 +103,40 @@ def load(path: Path | None = None) -> list[dict]:
     return out
 
 
+_ACCOUNT_LIKE = re.compile(r"[A-Z]{2}\d{2}[A-Z0-9]{8,26}")
+
+
+def _was_an_attack(row: dict) -> bool:
+    if "is_attack" in row:
+        return bool(row["is_attack"])
+    squashed = re.sub(r"[^A-Za-z0-9]", "", (row.get("text") or "").upper())
+    return bool(_ACCOUNT_LIKE.search(squashed))
+
+
 def summary(path: Path | None = None) -> dict:
-    """What the corpus knows so far. Shaped for a counter on the page."""
+    """What the corpus knows so far. Shaped for a counter on the page.
+
+    Every count here is over lines that **actually tried to redirect a payment**. A line
+    with no account in it is logged and then left out of these figures, because it did
+    not attempt anything and counting it as an attempt that beat every check is how the
+    page came to advertise a defeat that never happened.
+
+    Rows written before `is_attack` existed are treated as attacks only if they carry an
+    account-shaped token, so an old log is re-read correctly rather than trusted.
+    """
     rows = load(path)
-    depths = Counter(r.get("depth", 0) for r in rows)
-    got_through = [r for r in rows if not r.get("stopped")]
-    deepest = max((r.get("depth", 0) for r in rows), default=0)
+    real = [r for r in rows if _was_an_attack(r)]
+    depths = Counter(r.get("depth", 0) for r in real)
+    got_through = [r for r in real if not r.get("stopped")]
+    deepest = max((r.get("depth", 0) for r in real), default=0)
     return {
-        "attempts": len(rows),
-        "distinct": len({(r.get("text") or "").strip().lower() for r in rows}),
-        "stopped": sum(1 for r in rows if r.get("stopped")),
+        "attempts": len(real),
+        "logged": len(rows),
+        "not_an_attack": len(rows) - len(real),
+        "distinct": len({(r.get("text") or "").strip().lower() for r in real}),
+        "stopped": sum(1 for r in real if r.get("stopped")),
         "got_through": len(got_through),
         "deepest": deepest,
         "by_depth": {str(k): depths[k] for k in sorted(depths)},
-        "hardest": sorted(rows, key=lambda r: -r.get("depth", 0))[:5],
+        "hardest": sorted(real, key=lambda r: -r.get("depth", 0))[:5],
     }

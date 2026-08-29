@@ -41,6 +41,45 @@ FORBIDDEN = ("tainted", "taint", "span_id", "doc_hash", "resolver", "adjudicate"
              "llm", "tenant_id", "escalate", "escalated", "privileged", "canary",
              "grounded", "heuristic", "classifier")
 
+# What each field on the invoice is called, in words.
+#
+# The document view used to print the parser's own names -- `payment_iban`,
+# `tax_detail_rate`, `currency_code_amount_due` -- straight onto the screen. That is
+# exactly what this module exists to stop, and it slipped through because FORBIDDEN
+# lists the machine's *concepts* and these are the machine's *field names*. Found by
+# clicking "Show the invoice" and reading it.
+FIELD_LABELS: dict[str, str] = {
+    "vendor_name": "Supplier",
+    "vendor_address": "Supplier address",
+    "invoice_id": "Invoice number",
+    "invoice_date": "Invoice date",
+    "payment_iban": "Bank account",
+    "payment_bank_account": "Bank account",
+    "supplier_iban": "Bank account",
+    "tax_detail_rate": "Tax rate",
+    "currency_code_amount_due": "Currency",
+    "amount_total": "Total",
+    "total_amount": "Total",
+    "line_item_description": "Item",
+    "line_item_amount": "Item amount",
+    "vendor_tax_id": "Supplier VAT number",
+    "other": "Other text on the page",
+    "__ambiguous__": "Text we could not place",
+}
+
+
+def field_label(fieldtype: str) -> str:
+    """A person's name for one of the document's fields.
+
+    An unknown field type is title-cased rather than hidden: a reviewer seeing a field
+    we have no name for is better than a reviewer not seeing the field.
+    """
+    key = (fieldtype or "").strip()
+    if key in FIELD_LABELS:
+        return FIELD_LABELS[key]
+    return key.replace("_", " ").strip().capitalize() or "Unlabelled"
+
+
 _WORD = re.compile(r"[a-z_]+")
 
 

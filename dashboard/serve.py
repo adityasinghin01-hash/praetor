@@ -46,7 +46,7 @@ from praetor.docile_adapter import load_annotation  # noqa: E402
 from praetor.gate import Action, GateDecision, approve  # noqa: E402
 from praetor.types import Finding  # noqa: E402
 
-from dashboard import api, build, ratelimit  # noqa: E402
+from dashboard import api, build, gauntlet, ratelimit  # noqa: E402
 
 # One limiter per process. The expensive public endpoint is the one that
 # runs the pipeline and writes to disk; the read-only ones are cheap but
@@ -289,6 +289,20 @@ class Handler(BaseHTTPRequestHandler):
             return None
         if path == "/v1/gauntlet/documents":
             return self._json(200, api.gauntlet_documents())
+        # Open, and it must stay open: the page asks it before anything else to find out
+        # whether there is a session, so that a visitor with none is shown the tab that
+        # works for them instead of a sign-in form. It existed on the FastAPI transport
+        # and not on this one, which is the asymmetry `test_both_transports_return_the_
+        # same_json` exists to prevent.
+        if path == "/v1/field-labels":
+            return self._json(200, api.field_labels())
+
+        if path == "/v1/health":
+            return self._json(200, api.health(bool(auth.session_user(conn, self._token()))))
+
+        if path == "/v1/gauntlet/placements":
+            return self._json(200, api.gauntlet_placements())
+
         if path == "/v1/gauntlet/examples":
             return self._json(200, api.gauntlet_examples())
         if path == "/v1/gauntlet/document":
@@ -321,7 +335,8 @@ class Handler(BaseHTTPRequestHandler):
                 return None
             try:
                 return self._json(200, api.gauntlet_run(
-                    str(body.get("doc_id", "")), str(body.get("text", ""))))
+                    str(body.get("doc_id", "")), str(body.get("text", "")),
+                    str(body.get("placement", "") or gauntlet.DEFAULT_PLACEMENT)))
             except KeyError:
                 return self._json(404, {"error": "no such invoice"})
 
@@ -466,9 +481,13 @@ class Handler(BaseHTTPRequestHandler):
             # when the connection really was https, or it will not be sent back locally.
             https = self.headers.get("X-Forwarded-Proto", "").lower() == "https"
             secure = " Secure;" if https else ""
+            # To /app, not /. `/` is the older single-page queue and has no tabs, so
+            # signing in landed people on a page missing two thirds of the product --
+            # including the one page anybody sent a link is there to use. Watching
+            # somebody hunt for the "try to break it" button is how this was found.
             return self._redirect(
-                "/", f"{COOKIE}={token}; Path=/; HttpOnly;{secure} SameSite=Strict; "
-                     f"Max-Age={auth.SESSION_HOURS * 3600}")
+                "/app", f"{COOKIE}={token}; Path=/; HttpOnly;{secure} SameSite=Strict; "
+                        f"Max-Age={auth.SESSION_HOURS * 3600}")
 
         if path != "/approve":
             return self._json(404, {"error": "not found"})

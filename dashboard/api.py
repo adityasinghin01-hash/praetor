@@ -233,17 +233,49 @@ def gauntlet_document(doc_id: str) -> dict:
                       for f in ann["field_extractions"]]}
 
 
-def gauntlet_run(doc_id: str, text: str) -> dict:
-    """Run the real kernel on this invoice with this line added. Log the attempt."""
+def gauntlet_run(doc_id: str, text: str,
+                 placement: str = gauntlet.DEFAULT_PLACEMENT) -> dict:
+    """Run the real kernel on this invoice with this line added. Log the attempt.
+
+    `placement` decides where the line sits and what the document's parser calls it. An
+    unknown value falls back to the note rather than erroring: this endpoint is anonymous
+    and a visitor should not be able to 500 it with a typo.
+    """
     if doc_id not in gauntlet.documents(limit=999):
         raise KeyError(doc_id)
+    if placement not in gauntlet.PLACEMENTS:
+        placement = gauntlet.DEFAULT_PLACEMENT
     text = (text or "")[:attack_log.MAX_TEXT]
     outcome = gauntlet.run(doc_id, text, _pattern_for(doc_id),
-                           register=authority.load_register())
-    attack_log.record(text, doc_id, outcome.beat, outcome.stopped_at, outcome.stopped)
+                           register=authority.load_register(), placement=placement)
+    attack_log.record(text, doc_id, outcome.beat, outcome.stopped_at,
+                      outcome.stopped, is_attack=outcome.is_attack)
     body = outcome.as_dict()
+    body["placement"] = placement
     body["corpus"] = attack_log.summary()
     return body
+
+
+def field_labels() -> dict:
+    """The document's field names, in words. dashboard/language.py owns them."""
+    return {"labels": dict(language.FIELD_LABELS)}
+
+
+def health(signed_in: bool = False) -> dict:
+    """Is the service up, and does this caller have a session?
+
+    `signed_in` is what the page needs: with no session it opens the one tab that works
+    without one, rather than bouncing an anonymous visitor to a sign-in form they did not
+    ask for.
+    """
+    return {"ok": True, "signed_in": bool(signed_in)}
+
+
+def gauntlet_placements() -> dict:
+    """Where a visitor may put their line, and what each one means."""
+    return {"placements": [
+        {"id": k, "label": v["label"], "blurb": v["blurb"]}
+        for k, v in gauntlet.PLACEMENTS.items()]}
 
 
 def gauntlet_examples() -> dict:

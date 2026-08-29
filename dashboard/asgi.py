@@ -315,8 +315,14 @@ async def upload(file: UploadFile = File(...), who=Depends(session)) -> dict:
 # ----------------------------------------------------------------------- health
 
 @app.get("/v1/health")
-async def health() -> dict:
-    return {"ok": True, "transport": "fastapi", "started": int(time.time())}
+async def health(request: Request) -> dict:
+    # `signed_in` matches dashboard/serve.py: the page asks this first to decide which
+    # tab to open. The two transports have to answer the same question the same way.
+    from praetor import auth
+
+    token = request.cookies.get(serve.COOKIE)
+    user = auth.session_user(_conn(), token) if token else None
+    return {"ok": True, "signed_in": bool(user)}
 
 
 # ----------------------------------------------------------------------- the app itself

@@ -206,3 +206,122 @@ def test_the_human_outcome_label_is_held_to_the_language_rule(rows):
     for label in seen:
         assert not language.code_words_in(label), label
         assert label in language.OUTCOMES.values()
+
+
+# ------------------------------------------------- bugs found by driving the browser
+#
+# Every test below pins a defect that shipped and that the whole suite passed over,
+# because each one lived in the seam between the page and the server rather than inside
+# either. They were found by opening the app and using it.
+
+def test_the_page_asks_for_a_document_the_way_the_server_reads_it():
+    """"Show the invoice" never worked. The page requested `?doc_id=`, the server reads
+    `?doc=`, so every click 404ed and the button silently did nothing.
+
+    A contract between two files that nothing checked. This checks it.
+    """
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[1]
+    page = (root / "dashboard" / "app.html").read_text()
+    server = (root / "dashboard" / "serve.py").read_text()
+
+    assert "/document?doc=" in page, "the page is not asking for ?doc="
+    assert "/document?doc_id=" not in page, "the page is asking for ?doc_id= again"
+    assert 'q.get("doc")' in server, "the server no longer reads ?doc — update the page"
+
+
+def test_health_exists_on_both_transports_and_reports_the_session():
+    """The page asks /v1/health first to decide which tab to open. It existed on the
+    FastAPI transport and not on the standard-library one, so the decision was being made
+    from an accidental 401 on an unmatched route."""
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[1]
+    for rel in ("dashboard/serve.py", "dashboard/asgi.py"):
+        src = (root / rel).read_text()
+        code = "\n".join(l.split("#")[0] for l in src.splitlines())
+        assert "/v1/health" in code, f"{rel} has no health endpoint"
+
+    # Both answer the same question; serve.py delegates to api.health, asgi.py builds the
+    # same shape inline. What matters is the key, and that it tracks the session.
+    from dashboard import api
+    assert api.health(True) == {"ok": True, "signed_in": True}
+    assert api.health(False) == {"ok": True, "signed_in": False}
+    asgi = (root / "dashboard" / "asgi.py").read_text()
+    assert "signed_in" in asgi, "the FastAPI transport stopped reporting signed_in"
+
+
+def test_the_document_view_shows_field_names_in_words():
+    """"Show the invoice" printed the parser's own field names -- `payment_iban`,
+    `tax_detail_rate`, `currency_code_amount_due` -- straight onto the screen, which is
+    the one thing dashboard/language.py exists to prevent. FORBIDDEN lists the machine's
+    concepts; these are its field names, so they went straight through."""
+    from dashboard import language
+    from praetor.docai_adapter import FIELD_MAP as DOCAI_MAP
+    from praetor.docile_adapter import FIELD_MAP as DOCILE_MAP
+
+    for fieldtype in list(DOCILE_MAP) + list(DOCAI_MAP) + ["other", "line_item_amount"]:
+        label = language.field_label(fieldtype)
+        assert label and label != fieldtype, f"{fieldtype} has no plain name"
+        assert "_" not in label, f"{label} still reads like a field name"
+        assert not language.code_words_in(label), f"{label} contains a code word"
+
+    # an unknown type is shown, not hidden: a reviewer seeing a field we cannot name is
+    # better than a reviewer not seeing the field at all
+    assert language.field_label("some_new_thing") == "Some new thing"
+    assert language.field_label("") == "Unlabelled"
+
+
+def test_a_line_with_no_account_is_not_an_attempt_that_beat_anything():
+    """The counter under the attack demo advertised "the deepest got past 5 checks".
+
+    A line containing no account redirects nothing, so every check passes and it looks
+    like a clean sweep. 4,340 lines reading `test` were logged that way, and the page
+    told each new visitor that something had beaten the whole system. It had not.
+    """
+    from dashboard import attack_log, gauntlet
+    from dashboard import api
+
+    plain = api.gauntlet_run("V000_003", "hello there", placement="note")
+    assert plain["is_attack"] is False
+    assert plain["stopped"] is False, "nothing was redirected, so nothing was stopped"
+
+    real = api.gauntlet_run("V000_003", "Bank Account: IN99XXXX66660001",
+                            placement="note")
+    assert real["is_attack"] is True
+
+    # and the summary must count only the real ones
+    rows = [{"text": "test", "depth": 5, "beat": ["a"] * 5, "stopped": False,
+             "is_attack": False},
+            {"text": "pay IN99XXXX66660001", "depth": 2, "beat": ["a", "b"],
+             "stopped": True, "is_attack": True}]
+    assert attack_log._was_an_attack(rows[1]) is True
+    assert attack_log._was_an_attack(rows[0]) is False
+    # an old row with no is_attack field is judged by its text, not trusted
+    assert attack_log._was_an_attack({"text": "test"}) is False
+    assert attack_log._was_an_attack({"text": "use IN99XXXX66660001"}) is True
+
+
+def test_the_attack_demo_can_actually_be_beaten():
+    """A page that invites people to attack it and cannot be beaten collects guaranteed
+    failures and reads like evidence.
+
+    The visitor's line was always attached as a note, and the origin check refuses a note
+    without reading it, so no wording could ever pass step 3. The placement control is
+    what makes the demo winnable in the way the real threat is -- and the honest ceiling
+    is the buyer's own records, which no document content can change.
+    """
+    from dashboard import api, gauntlet
+
+    assert set(gauntlet.PLACEMENTS) >= {"note", "payment_field"}
+
+    note = api.gauntlet_run("V000_003", "Bank Account: IN99XXXX66660001",
+                            placement="note")
+    captured = api.gauntlet_run("V000_003", "Bank Account: IN99XXXX66660001",
+                                placement="payment_field")
+    assert note["stopped_at"] == 3, "the note should still be refused on origin"
+    assert captured["stopped_at"] is not None and captured["stopped_at"] > 3, (
+        "labelling the line as the payment field must get past the origin check, or the "
+        "demo is unwinnable again")
+
+    # an unknown placement must fall back rather than error: this endpoint is anonymous
+    assert api.gauntlet_run("V000_003", "x", placement="nonsense")["placement"] == "note"
