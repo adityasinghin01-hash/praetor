@@ -1743,7 +1743,7 @@ changes, it changes on purpose.
 
 ---
 
-## 24. The fine-tuned reader: 6x better where it trained, 10x worse where it did not
+## 24. The fine-tuned reader: better on four layouts, ruined on the fifth
 
 `docs/PLAN.md` Phase 8 asked for the on-device reader to be fine-tuned to emit only span
 references, because it scores **F1 0.040** and has never populated `bank_account`
@@ -1780,10 +1780,13 @@ scored on exactly the same documents with exactly the same scorer, `eval/readsco
 | `bank_account` correct | 0 / 20 | **6 / 20** | first time it has ever answered |
 | resolver rejections | 5 | 30 | |
 
-**The fine-tune worked and did not transfer.** On a page template it trained on it is six
-times more accurate than the base model and populates the privileged field for the first
-time in this project's history. On a page template it has never seen it is ten times
-*worse* than the model it started from.
+**The fine-tune worked and transferred unevenly.** On a page template it trained on it is
+six times more accurate than the base model and populates the privileged field for the
+first time in this project's history. On `letterhead`, a template it has never seen, it is
+ten times *worse* than the model it started from.
+
+**One fold is one measurement, and this one was the worst case.** The rotation over all
+five layouts is below, and it changes the headline this section originally carried.
 
 ### What it actually learned, in one line
 
@@ -1836,12 +1839,45 @@ can be measured rather than assumed.
 **The corpus is frozen.** Nothing here writes to `data/constructed`. The training split is
 derived at run time and `finetune/data/` is gitignored.
 
+### The rotation, and the correction it forced
+
+All five layouts, each trained from scratch on the other four. `letterhead` is scored on
+all 70 of its documents; the other four on 25 each (`finetune/rotate.sh`, ~31 minutes per
+fold).
+
+| held out | base F1 | fine-tuned F1 | | `bank_account` correct, base → tuned |
+|---|---:|---:|---:|---|
+| classic | 0.057 | **0.158** | 2.7x | 0 → 3 |
+| banded | 0.099 | **0.156** | 1.6x | 0 → 1 |
+| compact | 0.083 | 0.085 | 1.0x | 0 → 4 |
+| remit_right | 0.098 | 0.088 | 0.9x | 0 → 1 |
+| **letterhead** | 0.074 | **0.007** | **0.1x** | 0 → 0 |
+
+**This section originally read "10x worse where it did not train". That is true of one
+layout in five, and the rotation is what showed it.** On the other four the fine-tune is
+between neutral and 2.7 times better on an unseen template, and on every one of them it
+populates `bank_account` — which the base model never did, on any layout, in any run.
+
+`letterhead` is the outlier by construction: its vendor block starts at **x = 0.28**
+against **0.05 to 0.08** for every other template. It sits further from the training set
+than the training templates sit from each other, and it is the only fold that collapses.
+
+So the honest finding is not *"a fine-tune does not transfer"*. It is:
+
+> **The fine-tune learned the left margins of the layouts it saw. Where a new layout's
+> margins resemble them it helps; where they do not it is worse than doing nothing.** The
+> failure is proportional to how far the new page is from the training pages, and the one
+> number originally published was measured at the far end of that range.
+
+Publishing one fold would have overstated the result by a factor of about ten. **That is
+the same mistake this document keeps catching in components, made in the write-up instead:
+too little data, one confident number.**
+
 ### Not done
 
-One fold, not five. The rotation over all five layouts is ~2 h 15 min of pinned GPU and is
-scripted at the end of `finetune/README.md`; this is one held-out layout, and it is
-reported as one. A second configuration was not tried either — the diagnosis above points
-at rank, layer count and learning rate, and none of that has been run.
+A second configuration was not tried — the diagnosis above points at rank, layer count and
+learning rate, and none of that has been run. The four rotation folds are scored on 25
+documents each rather than 70, so their F1 carries more noise than `letterhead`'s.
 
 ---
 
@@ -2543,3 +2579,83 @@ is a person who did not build this trying to break it, not another dataset.
 **Not run:** the model pass. `--remote` runs the payloads that can express the attack
 through §1's undefended prompt, and there are none, so it costs nothing and there is
 nothing to report.
+
+---
+
+## 33. The regulation, looked at: two regimes, and the architecture already answers both
+
+`docs/COMPETITORS.md` closes with a gap: *"Regulatory angle (SOX attestation, EU AI Act on
+autonomous payment decisions) — not researched; likely matters for 'who pays for the
+failure'."* `docs/PLAN.md` repeats it under **what no amount of building fixes**. Nobody
+had looked. This is looking.
+
+**Not legal advice, and stated as reading rather than as a conclusion.** Classification
+under either regime depends on deployment, jurisdiction and who is asking. Sources are
+linked so the reading can be checked.
+
+### EU AI Act — the high-risk list does not appear to reach this
+
+Two facts decide it, and PRAETOR sits outside on both.
+
+**Annex III 5(b) is about natural persons.** It covers systems evaluating *"the
+creditworthiness of natural persons or establish[ing] their credit score"*. Paying a
+supplier is a business-to-business decision about a legal person. Models assessing
+institutional counterparty risk are read as outside Article 6 and Annex III, provided no
+individual consumer creditworthiness determination is produced. **An accounts-payable
+agent deciding whether to pay a company is not on the list.**
+
+**And the autonomy line falls on the safe side.** Where the Act does bite in financial
+services, the distinction drawn is between a system that *autonomously* denies or grants
+access and one that *supports a human decision*. `praetor/gate.py` has no autonomous grant
+to make: `PROPOSE_PAY` is the agent's ceiling, `APPROVED` is reachable by a human only, and
+`tests/test_invariants.py` asserts over every input that no agent path reaches it
+([DECISIONS #6](docs/DECISIONS.md)).
+
+That invariant was written as a security property. It turns out to be the same line the
+regulation draws, which is worth noticing but not worth overclaiming: **it was not designed
+for this, and being outside Annex III is not the same as being unregulated.** The
+general-purpose and transparency obligations still apply, and the high-risk rules have
+applied since **2 August 2026**.
+
+### SOX — no AI-specific rule exists, and that is the finding
+
+As of mid-2026 **no primary regulator has issued AI-specific guidance for Section 404**,
+and the SEC's Financial Reporting Manual updated 29 June 2026 contains none. Section 404
+was written in 2002 and has never been amended for automated controls.
+
+**So the statute applies to whatever controls you have, regardless of whether a human or an
+algorithm executes them.** An AI-assisted control is not prohibited and is not
+special-cased; it must be documented, tested, and evidenced like any other.
+
+What changed recently is the auditor's side: the PCAOB's **QC 1000**, effective 15 December
+2025, requires firms to address technology risk at the firm level, and calendar-year 2026
+audits are the first full cycle under it. AI-assisted controls are expected to be looked at
+harder than they were in 2025.
+
+**Read against what this repo already produces**, that is a favourable shape rather than a
+problem — every one of these exists for its own reasons and happens to be what an attestation
+asks for:
+
+| SOX 404 asks for | What is already here |
+|---|---|
+| the control, documented | `praetor/gate.py` and 33 decision records |
+| the control, tested | 623 tests, 589 of them needing only `pytest` |
+| evidence it operated | the trace, and the approvals kept as the one backed-up asset |
+| who approved, and when | approval is a schema constraint, human-only, asserted over every input |
+
+### What this does not settle
+
+**Liability is a third question and neither regime answers it.** "Who pays when the machine
+gets it wrong" is decided by contract and by ordinary negligence law, not by the AI Act or
+by SOX, and nothing found here speaks to it.
+
+**And this is desk research by an engineer.** It narrows a gap that was recorded as
+completely unexamined, and it is not a substitute for counsel before anybody deploys this
+against real money.
+
+Sources: [Annex III, EU Artificial Intelligence Act](https://artificialintelligenceact.eu/annex/3/) ·
+[EBA, AI Act implications for the EU banking and payments sector](https://www.eba.europa.eu/sites/default/files/2025-11/d8b999ce-a1d9-4964-9606-971bbc2aaf89/AI%20Act%20implications%20for%20the%20EU%20banking%20sector.pdf) ·
+[Linklaters, The EU AI Act: what payments firms need to know](https://financialregulation.linklaters.com/post/102jxst/the-eu-ai-act-what-is-it-and-what-do-payments-firms-need-to-know) ·
+[EU AI Act credit scoring scope](https://www.regulatoryai.eu/ai-creditworthiness/) ·
+[SOX 404 compliance for AI-assisted controls, 2026](https://www.finrep.ai/blog/sox-404-compliance-checklist-for-ai-assisted-controls-2026) ·
+[What's changing in SOX and internal controls in 2026](https://cpeonline.com/whats-changing-sox-and-internal-controls-2026)

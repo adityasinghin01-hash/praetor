@@ -25,7 +25,7 @@ for its reasoning; where they disagree, this file wins.
 | The moat | a merged vendor master pays the wrong account **12 of 12**; refusals cross, trust never does |
 | Shippable | infrastructure as code, `0 to destroy`; the queue serves **~170 req/s**, flat under concurrency |
 | Benchmark | **VSB**, 700 cases, the first for value substitution rather than agent action; a fully compromised reader scores **0 of 480** at **0.955** utility |
-| Fine-tune | on-device reader **6x better** on a trained layout, **10x worse** on an unseen one |
+| Fine-tune | on-device reader **6x better** on a trained layout; over all five folds, **2.7x to 0.9x** on unseen ones and **0.1x** on the outlier |
 | Attacker moves second | nine strategies, budget 1 to 9, **0 of 450** reach the sink |
 | Spent to date | about **₹27 of credit**. Money has never been the constraint |
 
@@ -289,8 +289,12 @@ never claim the water.
 **No confirmed incident exists.** This attack is anticipated, backed by an observed technique
 and a measured fraud category. Say "arriving", never "happening".
 
-**Regulation is unresearched.** SOX attestation and the EU AI Act on autonomous payment
-decisions likely decide who pays when it goes wrong. Nobody has looked.
+**Regulation: looked at once, by an engineer, not by counsel** (`FINDINGS.md` §33).
+The EU AI Act's high-risk list covers the creditworthiness of *natural persons*; paying a
+supplier is a decision about a company, and the gate's human-only approval falls on the
+advisory side of the line the Act draws. SOX has no AI-specific rule at all — it applies
+to whatever control you have, human or algorithm, and asks for it documented, tested and
+evidenced. **Liability is a third question and neither regime answers it.**
 
 ---
 
