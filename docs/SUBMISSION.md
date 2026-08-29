@@ -167,6 +167,15 @@ them run it on a medical record and a contract to show the point rather than arg
 And that the whole thing reproduces from a clean clone with no API key, no cloud account
 and no billing: `make install && make demo` gives 598 passing tests, the rules baseline,
 and the full review queue.
+
+We also released the benchmark this threat model did not have. BIPIA, AgentDojo and
+InjecAgent all score whether an agent took an attacker-chosen ACTION; a document extractor
+takes no actions, so none of them fits. VSB is 700 cases scored on the VALUE that came
+back, and 220 of them carry no attack at all — including 60 that carry the wording of a
+successful attack over the vendor's own genuine account, so a filter that keys on wording
+pays for it. Against a reader we deliberately compromised on every single case, the
+architecture returned the attacker's account 0 times out of 480. Turn the second path off
+and it is 20.
 ```
 
 ## What we learned
@@ -181,6 +190,14 @@ us on day two that the agent's job was adjudication, not detection — which is 
 product from the one we would otherwise have built.
 
 And that a measurement you can't reproduce is worse than no measurement.
+
+And that how you hold out the data decides what you find. We fine-tuned the on-device
+reader and it got six times better on page templates it trained on and ten times worse on
+one it had never seen — it had memorised the training layouts' margins and was writing them
+over the coordinates in front of it. Held out by document instead of by layout, we would
+have published a 6x win. The same discipline had already refuted the second path's design
+one phase earlier. It is the cheapest thing in this project and it has now caught two
+results that looked good and were not.
 ```
 
 ## What's next for PRAETOR
@@ -198,8 +215,17 @@ call last Tuesday" hole the authority rule could never reach. It ships off by de
 because enabling it changes outcomes and our published 28% figure was measured without it.
 Those are one task, not two.
 
-Replace our hand-authored payload taxonomy with an indirect-injection benchmark we did
-not write, and report that as the headline number.
+Get a benchmark we did not write. VSB is ours, so it is still our attacks scored against
+our defence — the controls and the decoys make that less circular, not un-circular. The
+honest fix is somebody else's payloads, and the honest statement today is that no public
+set matches this threat model.
+
+Run VSB and the adaptive ladder against a hosted model. Both reference runs are on-device,
+because a full pass is 700 calls against a free tier of 20 per day. That is a quota
+problem, not a design one, and it is the difference between "this architecture holds" and
+"this architecture holds on this model".
+
+Put a licence on the repository. A benchmark nobody is allowed to use is not released.
 ```
 
 ## Built with

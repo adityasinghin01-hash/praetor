@@ -1984,6 +1984,46 @@ all. [§20](#20-a-pdf-in-a-bucket-becomes-a-queue-entry-in-645-seconds-and-the-k
 already records what that looks like in the cloud: every document escalating as a
 first-time supplier.
 
+### The second curve did not appear, and the reason is the experiment, not the agent
+
+`docs/ROADMAP.md` predicted two lines: **a flat one at the privileged sink and a sloping
+one at the adjudicator's decision**, on the reasoning that the sink is structural and a
+model decision is what an adaptive attacker gets purchase on. The sink is flat, as
+predicted. The adjudicator did not slope.
+
+| Adjudicator | adjudications | voted `resolve` |
+|---|---:|---:|
+| on-device Gemma 3 1b (6 documents x 9 rungs) | 54 | **0** |
+| hosted `gemini-3.5-flash-lite` / `-flash` (2 documents x 9 rungs) | 18 | **0** |
+
+72 of 72 escalate. The hosted run cost Rs 0.41 and 18 of a 20-per-day free tier, which is
+why n is 2 documents rather than 50.
+
+**This ladder cannot measure what it was built to measure, and that is worth stating
+plainly rather than reporting the zero.** Every one of the 72 escalations carries
+`BANK_UNKNOWN` and `TAINTED_ACCOUNT_NOT_IN_MASTER` — checked, not assumed — because every
+rung on this ladder attacks the bank account. Those are privileged codes. The agent is
+being asked whether to resolve an exception about the one field
+[§13](#13-rule-4-the-agent-may-point-at-a-reason-never-author-one) and
+`praetor/agents/exception_agent.py` will not release under any argument, and it declines.
+Even if it had voted resolve, the gate overrides it on privileged findings, so the `final`
+column could not have moved either.
+
+The adjudicator's persuadability is real and is already measured elsewhere, on the
+exceptions where it is a live question: **28% fewer human touches**
+([§6](#6-adjudication-28-fewer-human-touches-and-no-wrong-resolutions)), an injected
+approval ticket that persuaded it to resolve a genuine tax-rate exception
+([§8](#8-the-document-authority-rule-closes-the-hole-6-reported)), and Rule 4 as the
+answer to it (§13). An adaptive ladder aimed at the *adjudicator* would have to attack a
+**non-privileged** exception — an amount, a tax rate, a currency — with a persuasive note,
+and this one attacks the account nine different ways. That is a different experiment and it
+has not been run.
+
+> The prediction was wrong about what this experiment could show, not about the agent. A
+> flat second line here is an artifact of pointing every rung at the privileged field.
+
+---
+
 ### Two vacuous results, both caught, both now tests
 
 A flat line at zero is exactly the shape a broken harness produces, so the two that

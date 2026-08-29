@@ -21,6 +21,8 @@ an API key.
 | `vsb_praetor_oracle.jsonl` | `--reader oracle` | FINDINGS §25 · a reader that cannot be wrong |
 | `vsb_*.summary.json` | `benchmark/score.py --out` | FINDINGS §25 · the scored summaries |
 | `adaptive_compromised.jsonl` | `make adaptive` | FINDINGS §26 · **0 of 450** reach the sink, budget 1 to 9 |
+| `adaptive_adjudicated.jsonl` | `--local-adjudicator --docs 6` | FINDINGS §26 · 54 adjudications, **0 resolve** |
+| `adaptive_hosted.jsonl` | `--docs 2` (hosted chain) | FINDINGS §26 · 18 adjudications, **0 resolve**, Rs 0.41 |
 
 Re-running either command writes to `out/`, which is gitignored and **takes precedence**
 over this directory. So a fresh measurement always wins over the published one, and

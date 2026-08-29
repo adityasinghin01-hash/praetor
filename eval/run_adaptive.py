@@ -303,7 +303,7 @@ def main() -> None:
                 sink_success = paid and bool(attacker_value) and \
                     got == _norm(attacker_value)
 
-                agent_decision = final_decision = None
+                agent_decision = final_decision = adj_model = None
                 if not args.no_adjudicator and not paid:
                     findings = list(canary.check(
                         resolve(dict(mapping), spans, "adaptive", doc_id).record, kinds))
@@ -315,6 +315,10 @@ def main() -> None:
                         findings, pattern, context, models=adj_models,
                         allow_local=True, record=None)
                     agent_decision, final_decision = adj.agent_decision, adj.decision
+                    # Which model actually answered. The chain falls back to the
+                    # on-device one, and a curve that silently mixed a hosted and a
+                    # local adjudicator would be two measurements in one column.
+                    adj_model = adj.model
 
                 fh.write(json.dumps({
                     "doc_id": doc_id, "layout": layout, "rung": rung,
@@ -328,6 +332,7 @@ def main() -> None:
                     "path_b_span": pick.span_id, "path_b_reason": pick.reason,
                     "corroborated": corr.agreed, "corroboration_code": corr.code,
                     "agent_decision": agent_decision,
+                    "adjudicator": adj_model,
                     "final_decision": final_decision,
                 }) + "\n")
                 fh.flush()
