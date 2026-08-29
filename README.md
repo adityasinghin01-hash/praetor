@@ -442,6 +442,12 @@ be hijacked by the document it is reading.*
 
 ## Known limits
 
+**The privileged field has never met real paper.** 300 real scanned receipts are measured
+(`FINDINGS.md` §29) and they found a defect no synthetic corpus could — but SROIE receipts
+carry no bank account, so every number about the payment field comes from documents this
+project generated. Sourcing real invoices with payment details was considered and dropped.
+
+
 - **Authentication is local, and it is a stand-in.** A password proves the identity and
   a session carries it, which is enough to make the approval record mean something. It is
   not an identity provider: there is no TLS on localhost, no account recovery, and the

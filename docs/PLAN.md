@@ -255,7 +255,7 @@ benchmark" actually requires.
 
 ## What only Aditya can do
 
-1. ~~Open the Vertex support case.~~ **Dropped 29 Aug.** It was gating three things
+1. ~~Open the Vertex support case, and the card test.~~ **Both dropped 29 Aug.** It was gating three things
    and all three resolved without it: 3.7 was dropped, Rule 4 is measured (§27), and the
    benchmark's reference runs are on-device by design. A card may be tried instead.
 2. Approve spend beyond ~₹5,000 of credit.
@@ -288,13 +288,13 @@ judgement call, and one is half done and needs Aditya.**
 
 | # | Weakness | State |
 |---|---|---|
-| 1 | **Never tested on a real document** | **Half done.** 300 real scanned receipts, sitting unscored in the repo the whole time, are now measured — and they found a 96% false-positive rate no synthetic corpus could (`FINDINGS.md` §29). **Still open:** no real document here carries a bank account, so the privileged field has never met real paper. **Twenty real invoices with payment details closes it.** |
-| 2 | **We wrote the attacks** | **Partly.** Somebody else's payloads were fetched and measured: **0 of 263** public injections can express value substitution at all (§32). That settles why VSB had to exist. It does **not** settle the circularity — an outsider trying to break this is still the only thing that does. |
+| 1 | **Never tested on a real document** | **As far as it goes.** 300 real scanned receipts, sitting unscored in the repo the whole time, are now measured — and they found a 96% false-positive rate no synthetic corpus could (`FINDINGS.md` §29). **Closed as of 29 Aug** at Aditya's decision: sourcing twenty real invoices with payment details was cancelled. So the privileged field has never met real paper, and no sentence anywhere may imply otherwise. |
+| 2 | **We wrote the attacks** | **Partly, and the rest needs no code.** Somebody else's payloads were fetched and measured: **0 of 263** public injections can express value substitution at all (§32). That settles why VSB had to exist and does **not** settle the circularity. The instrument for closing it is already built and live — the *Try to break it* tab runs the real kernel with the reader assumed fooled, and `dashboard/attack_log.py` keeps every attempt. **The remaining task is sending two people the link.** |
 | 3 | **Only one field guarded** | **Done.** Two fields now — the two that move money — and the arithmetic check that had never existed: recall 0.787 → **1.000** on the wider corpus (§30). |
 | 4 | **Nobody has ever used it** | **Cannot be bought.** 0 human decisions on record; the queue ordering has learned nothing and says so. Months of real use, or nothing. |
 | 5 | **Cries wolf on clean documents** | **Done.** The worst number in the repo: **0.545 → 0.045**, twelve times fewer false alarms, attack success unmoved at 0 of 480 (§31). |
 | 6 | **The agent saves less than it sounds** | **Done, by reframing.** The corpus contains only 19 resolvable exceptions in 65. The agent took **18 of 19 — 94.7% of the ceiling** — and every one was right (§34). The 28% is the corpus, not the agent. |
-| 7 | **It does not act** | **Aditya's call.** Adding tool calls moves this onto the ground CaMeL, Dromedary, AuthGraph and Zenity already occupy, where their protection needs an agent that clicks and a user giving instructions — neither of which a batch pipeline has. The one version that stays ours is written up but not built. |
+| 7 | **It does not act** | **Cancelled 29 Aug.** Adding tool calls moves this onto the ground CaMeL, Dromedary, AuthGraph and Zenity already occupy, where their protection needs an agent that clicks and a user giving instructions — neither of which a batch pipeline has. The generalisation that would stay ours (a tool argument must be a reference into a buyer-controlled record, never a value the document supplied) is named in `FINDINGS.md` §25 and deliberately not built. |
 | 8 | **No confirmed real incident** | **Cannot be bought.** The threat is arriving, not happening. Say it that way. |
 | 9 | **One flavour of paperwork** | **Done.** A second corpus with three account formats, two pages, line items and non-English notes broke three components and exposed an English-only assumption nothing had declared (§28). |
 | 10 | **No outside review, legal untouched** | **Half done.** The legal side is researched (§33): the EU AI Act's high-risk list covers natural persons, not suppliers, and SOX has no AI-specific rule. A self-review of this session's kernel changes found a real hole — the fix for §29 opened an attack that no test caught. **An actual outsider has still not looked.** |
