@@ -334,3 +334,43 @@ def test_every_guarded_field_is_reachable_through_the_document_ai_vocabulary():
             f"Document AI labels {field} as {docai_types}, none of which translates into "
             f"{sorted(allowed)}. Every clean invoice on the Document AI path will trip "
             f"IMPOSSIBLE_ORIGIN on {field}. Add the entry to SPAN_KIND_MAP.")
+
+
+def test_provenance_resolves_against_the_spans_the_reader_is_shown():
+    """The two span-id spaces, measured on the fixture.
+
+    `spans_of` and `span_kinds_of` build ids from the page's LINES -- what the reader is
+    shown and what the canary reads. `to_record` builds them from the ENTITY boxes. On a
+    PDF this project renders, a field is one clean line and the two coincide. On a real
+    scan they do not: FINDINGS §35 measures 17 of 36 values (47.2%) resolvable across 12
+    real scanned invoices, against 5 of 7 on this fixture.
+
+    This pins the fixture's number so the ratio cannot silently get worse, and it is the
+    test that should be changed to 7/7 when the two id spaces are made one.
+    """
+    import json
+    import pathlib
+
+    from praetor import docai_adapter as A
+
+    root = pathlib.Path(__file__).resolve().parents[1]
+    doc = json.loads((root / "tests" / "fixtures" / "docai_V000_003.json").read_text())
+    spans = A.spans_of(doc)
+    record = A.to_record(doc, "h", "V000_003")
+
+    fields = ("vendor_name", "invoice_number", "amount_total", "currency",
+              "bank_account", "tax_rate", "vendor_address")
+    present = [f for f in fields if getattr(record, f, None) is not None]
+    resolvable = [f for f in present
+                  if getattr(record, f).prov.span_id in spans]
+
+    assert len(present) == 7, "the fixture should still yield every field"
+    assert len(resolvable) >= 5, (
+        f"only {len(resolvable)} of {len(present)} values can have their origin located "
+        "among the spans the reader sees. FINDINGS §35 measured 5 of 7 here; if this has "
+        "fallen, the Document AI path got worse.")
+
+    # And the guarded field specifically -- the one the whole architecture is about.
+    assert record.bank_account.prov.span_id in spans, (
+        "the bank account's origin cannot be located, so the origin check is blind on "
+        "the only path that reads real documents")

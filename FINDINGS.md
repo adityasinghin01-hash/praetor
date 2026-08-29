@@ -2746,3 +2746,86 @@ shows how easily that number moves in the other direction: Rule 4 takes it to 0.
 resolvable from the document alone is unknown, and this corpus was built by us to be 29%.
 That is the number to be suspicious of, and no amount of measuring our own generator will
 settle it.
+
+---
+
+## 35. Real scanned invoices: the origin check cannot see 53% of what it guards
+
+[§29](#29-real-paper-a-96-false-positive-rate-that-only-real-documents-could-show)
+closed with a limit: SROIE receipts carry no bank account, so the privileged field had
+never met real paper. This is the attempt to close it, and it found something worse than
+the gap it was chasing.
+
+**Twelve real scanned invoices** — `chainyo/rvl-cdip-invoice`, images from a public
+archive, no annotations of any kind — put through the production front door:
+
+```bash
+python eval/run_real_invoices.py --limit 12      # Rs 0.88/page, responses cached
+```
+
+Nothing here is generated, fitted or labelled by this project. Document AI assigns every
+label, and the canary reads those labels.
+
+### What real paper looks like
+
+| | synthetic corpus | real scans |
+|---|---:|---:|
+| spans per document | 8 – 10 | **19 – 81** |
+| entities Document AI returned | — | 5 – 22 per document |
+| of the 7 fields the kernel wants, found | 7 / 7 | **1 – 5** |
+
+Field by field, over 12 documents: `vendor_name` 11, `invoice_number` 8,
+`vendor_address` 8, `amount_total` 6, `currency` 3, `tax_rate` 0, **`bank_account` 0**.
+
+### The privileged field is not on these documents at all
+
+Across all 12, Document AI returned **no `supplier_iban`**. Not one. The entity types it
+did return include `remit_to_name`, `remit_to_address`, `payment_terms` and
+`purchase_order` — **these invoices are paid by cheque to an address.**
+
+That is not a gap in our testing. It is a fact about the documents that are publicly
+available, and it is most of the reason this gap has stayed open: **an invoice carrying a
+bank account is commercially sensitive, so the corpora that exist do not have one.** The
+honest statement remains that the privileged field has never been measured on real paper,
+and now the reason is measured too.
+
+### And the defect underneath, which is the real finding
+
+`praetor/docai_adapter.py` builds span ids **twice, from two different things**:
+
+- `spans_of` and `span_kinds_of` build them from the page's **lines** — that is what the
+  reader is shown and what the canary reads;
+- `to_record` builds them from the **entity** bounding boxes.
+
+On a PDF this project rendered itself, a field is one clean line and the two boxes
+coincide. On a real scan they do not.
+
+| | provenance id found among the spans the reader sees |
+|---|---:|
+| our own rendered PDF (`tests/fixtures/docai_V000_003.json`) | 5 / 7 — **71%** |
+| **12 real scanned invoices** | **17 / 36 — 47.2%** |
+| documents with at least one unresolvable origin | **9 of 12** |
+
+**On real documents the origin check cannot locate the origin of more than half the
+values it is asked about.** It reports `ORIGIN_UNKNOWN` and escalates, so it fails in the
+safe direction — nothing is paid on an origin nobody could establish. But "fails closed"
+and "works" are different claims, and this repo has been careful about the difference
+everywhere except here.
+
+Two documents fired `ORIGIN_UNKNOWN` in this run rather than nine, only because the
+canary guards `bank_account` and `amount_total`, and `bank_account` was absent from all
+twelve. **Had these invoices carried an account, the check would have been blind to
+roughly half of them.**
+
+### What this qualifies
+
+[§15](#15-the-front-door-a-real-pdf-through-document-ai-into-the-kernel-unchanged)
+reports 30 of 30 fields across five layouts through Document AI. That is true, and it was
+measured on PDFs this project rendered, where one field is one line. It says nothing about
+a scan, and the number that matters on a scan is 47.2%.
+
+The fix is not subtle — one id space, built once, with entities matched onto lines rather
+than measured independently — and it is **not done**. It changes the component every
+published Document AI number depends on, and doing it in the same breath as measuring it
+would mean neither could be reviewed. It is written down here instead, which is what this
+repo does with a defect it has found and not yet closed.
