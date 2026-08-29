@@ -95,7 +95,7 @@ def main() -> None:
             if seq >= 3 and rng.random() < args.deviation_rate:
                 dev = rng.choice(DEVIATIONS)
                 explained = rng.random() < args.explained_rate
-            fields, truth = build(v, seq, rng, dev, explained)
+            fields, truth, _items = build(v, seq, rng, dev, explained)
             doc_id = f"B{v['key'][1:]}_{seq:03d}"
             annotation = to_annotation(fields, None, v["layout"],
                                        random.Random(f"{args.seed}:{doc_id}"))

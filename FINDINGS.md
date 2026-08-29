@@ -2122,3 +2122,118 @@ applied *after* the agent by design, so that the guarantee does not depend on th
 knowing about it. It also says nothing about a corpus whose exceptions have purchase orders
 behind them, which is the case Rule 4 is actually built for — R1 verified 0 documents here
 because only one document in the corpus cites an order the register holds.
+
+---
+
+## 28. A second corpus, and everything that reads content broke
+
+Every figure in this document rests on 350 invoices from one generator: one account
+format, one page, no line items, English throughout. That is a narrow world, and
+`FINDINGS.md` has twice caught a component learning the corpus instead of the task —
+geometry in [§17](#17-geometry-is-the-feature-an-attacker-writes-to-and-the-layout-hold-out-is-what-found-it),
+page margins in [§24](#24-the-fine-tuned-reader-6x-better-where-it-trained-10x-worse-where-it-did-not).
+This widens the world and re-measures.
+
+**`data/constructed` is untouched.** Every new capability in `eval/make_invoices.py`
+defaults off, no new draw is taken from the content stream unless a flag is on, and the
+frozen corpus still regenerates to the same SHA-256 over all 350 files
+(`d425b871…3327f283`), along with its ground truth and its PO register. The sidecar
+filenames are now derived from the corpus directory, because the generator used to write
+`constructed_truth.jsonl` into the parent folder and a second corpus would have silently
+overwritten the first one's ground truth.
+
+Reproduce:
+
+```bash
+python eval/make_invoices.py --out data/constructed_v2 --per-vendor 14 \
+    --accounts mixed --line-items 4 --pages 2 --locales mixed
+```
+
+| | frozen corpus | `constructed_v2` |
+|---|---|---|
+| account format | 1 — Dutch IBAN | **3** — 125 IBAN, 110 digits-only (Indian domestic), 106 with separators (UK sort code) |
+| pages | 1 | **2** — payment block and totals on the second |
+| line items | none | **4 per invoice**, with a stated total that is their sum |
+| note language | English | English plus **19** in German, Dutch and French |
+| deviation types | 7 | **8** — adds `LINE_ITEMS_MISMATCH`, which the frozen corpus cannot express |
+
+### What it did to each component
+
+| Component | what it reads | frozen | wider |
+|---|---|---:|---:|
+| Rules baseline | values against this supplier's history | F1 **0.874** | F1 **0.763** |
+| Path B | number composition | **0.997** | **0.367** |
+| Path B, refitted on the wider corpus | — | — | **0.991** |
+| The canary | the span's **label** | 0 false positives / 350 | **0 false positives / 350** |
+| The authority rule | English words | works | **silently dead** |
+
+**Everything that reads content broke. The thing that reads structure did not move.**
+
+### Path B learned what an account looks like in one country
+
+0.997 to 0.367 is not noise, and the breakdown is exact:
+
+| account shape | n | correct | abstained | wrong |
+|---|---:|---:|---:|---:|
+| IBAN — the shape it was fitted on | 125 | **125** | 0 | 0 |
+| digits only | 110 | **0** | 110 | 0 |
+| digits with separators | 106 | **0** | 106 | 0 |
+
+**It gets every IBAN right and abstains on every account that is not one.** It had learned
+"an account is an IBAN", which is a property of the corpus, not of invoices. Refitted on
+the wider corpus it scores **0.991** held out by layout, so the task was always learnable
+and the evidence was the limit.
+
+Two things make this survivable rather than dangerous, and both are the design working:
+
+- **It failed by abstaining, never by answering wrongly.** Across all four stress
+  variants the `PAID` column stayed **0** — no attacker's account reached a payment on any
+  of 350 documents, in any variant. A component that becomes useless is a queue problem; a
+  component that becomes wrong is a money problem.
+- **The canary did not care.** 0 false positives on 350 and 100% catch on the 30 attacks,
+  identical to the frozen corpus, because a span's label does not change when the number
+  inside it is written in a different country's format.
+
+This is the third time the same mistake has surfaced here, in three different components:
+Path B learned where the payment field sits (§17), the fine-tuned reader learned the
+training layouts' left margins (§24), and Path B learned what an account looks like. **Each
+was found by widening the data, never by reading the code.**
+
+### The rules were flattered by invoices with no line items
+
+F1 0.874 to 0.763, precision 0.740, recall 0.787. Two causes, and neither is subtle:
+
+- **`AMOUNT_SPIKE`: 3 of 9 caught**, against 8 false `AMOUNT_OUT_OF_RANGE` flags. When the
+  total is the sum of four line items it moves over a much wider range than a single drawn
+  figure, so a supplier's historical band is wider and a spike hides inside it.
+- **`LINE_ITEMS_MISMATCH`: 1 of 5 caught, and the reason was right 0 times.** There is no
+  arithmetic check anywhere in this system. Nothing adds the lines up and compares them to
+  the total. The one that was caught was caught by an unrelated rule, which is worse than
+  missing it, because the finding named the wrong cause.
+
+That is a whole class of accounts-payable fraud the system currently cannot see, and it was
+invisible for as long as the corpus had no line items.
+
+### The authority rule is English, and nothing said so
+
+`praetor/authority.py` decides whether a document claims approval using
+`APPROVAL_LANGUAGE`, a regular expression over `approved|approval|authorised|signed off`.
+Measured against the same claim in four languages, with the purchase order present in the
+register:
+
+| | recognised as an approval claim | claims found |
+|---|---|---:|
+| English | yes | 1 |
+| German | **no** | 0 |
+| Dutch | **no** | 0 |
+| French | **no** | 0 |
+
+The buyer's PO register is built by the same regex, so generating a corpus with
+non-English notes produced a register with **0 orders** — and with an empty register, R1,
+the only rule in Rule 4's set that verifies against a purchase order, can never fire.
+
+**The failure is in the safe direction and it is total.** A fabricated German approval note
+gains an attacker nothing, because nothing recognises it as a claim. But a *legitimate*
+German approval is equally invisible, so on a non-English corpus the authority rule and R1
+are dead code that reports success by staying quiet. Nothing in the system says it only
+works in English. Now something does.

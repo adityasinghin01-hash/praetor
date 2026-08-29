@@ -40,8 +40,12 @@ def _generate(tmp_path, monkeypatch, *, jitter: bool, seed: int = 7):
                                 "--per-vendor", str(PER_VENDOR),
                                 "--seed", str(seed)])
         make_invoices.main()
+    # The truth file is named after the corpus directory, not fixed to
+    # `constructed_truth.jsonl`. It used to be fixed, which meant generating any second
+    # corpus into data/ would overwrite the frozen corpus's ground truth in place --
+    # see tests/test_corpus_frozen.py.
     rows = [json.loads(line) for line in
-            (out.parent / "constructed_truth.jsonl").read_text().splitlines()]
+            (out.parent / f"{out.name}_truth.jsonl").read_text().splitlines()]
     docs = {p.stem: json.loads(p.read_text()) for p in out.glob("*.json")}
     return rows, docs
 

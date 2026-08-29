@@ -56,3 +56,24 @@ def test_the_claim_pattern_actually_matches_something():
     rewording, which is exactly when it would be needed."""
     found = {f for f, _, _ in _claims()}
     assert len(found) >= 3, f"only found claims in {found}; the pattern has rotted"
+
+
+def test_the_diagram_has_no_damaged_css():
+    """The test count is updated by hand in five files, and in the diagram the number
+    also appears as a CSS font-weight. A blunt find-and-replace on the count turned
+    three `font-weight:600` rules into `font-weight:606`, which is not a valid weight
+    and silently changes how the diagram renders.
+
+    Cheap to check, and it fails loudly the next time somebody does it.
+    """
+    html = (ROOT / "docs" / "architecture.html").read_text()
+    weights = set(re.findall(r"font-weight\s*:\s*([a-z0-9]+)", html))
+
+    # Pinned, not range-checked. The diagram uses variable-font weights -- 620, 640, 650
+    # are all legitimate -- so "is it between 1 and 1000" would have accepted the 606
+    # this guard exists to catch. Changing a weight on purpose means changing this line.
+    assert weights == {"400", "600", "620", "640", "650", "700"}, (
+        f"font-weights in the diagram changed: {sorted(weights)}. If that was "
+        "deliberate, update this test; if it was a find-and-replace on the test count, "
+        "it just damaged the CSS.")
+

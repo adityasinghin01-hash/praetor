@@ -12,7 +12,7 @@ for its reasoning; where they disagree, this file wins.
 
 | | |
 |---|---|
-| Tests | **600 passing tests**, and 566 of them with only `pytest` installed; plus **18** frontend tests including an accessibility pass |
+| Tests | **607 passing tests**, and 575 of them with only `pytest` installed; plus **18** frontend tests including an accessibility pass |
 | Kernel | `praetor/` imports nothing outside the standard library, and nothing from the web layer |
 | Live | https://praetor-836128159455.asia-south1.run.app · `/app` is the three-tab UI |
 | Rules baseline | precision 0.800 · recall 0.963 · **F1 0.874** on 350 invoices, 5 layouts |
