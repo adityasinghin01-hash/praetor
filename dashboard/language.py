@@ -115,6 +115,11 @@ EXPLANATIONS: dict[str, Explanation] = {
         "stop"),
 
     # --- the ones that need a look
+    "LINE_ITEMS_DO_NOT_SUM": Explanation(
+        "The items on this invoice do not add up to the total it asks for.",
+        "Add up the lines yourself and compare. If the total is higher than the items, "
+        "ask the supplier for a corrected invoice before paying anything.",
+        "check"),
     "AMOUNT_OUT_OF_RANGE": Explanation(
         "Much bigger than this supplier's normal invoice.",
         "Check there is a purchase order or an approval that covers this amount. If "

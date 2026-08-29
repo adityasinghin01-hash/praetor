@@ -2332,3 +2332,61 @@ synthetic documents.
 
 Twenty real invoices with payment details would close that, and no amount of generating
 substitutes for them.
+
+---
+
+## 30. The invoice checked against itself: recall 0.787 to 1.000
+
+[§28](#28-a-second-corpus-and-everything-that-reads-content-broke) found a hole rather
+than a bug: on a corpus with line items, an altered total was caught **1 time in 5** and
+the reason was right **0 times**. There was no arithmetic anywhere in this system. Nothing
+added the lines up and compared them to the total.
+
+`praetor/baseline_rules._line_items_sum` does. Reproduce with `make rules` on either
+corpus.
+
+**It is the only rule in that file that needs no supplier.** Every other one compares the
+document against this vendor's own history, so all of them are silent on a first-time
+supplier, on a fresh deployment, and on a vendor nobody recognises — which
+[§20](#20-a-pdf-in-a-bucket-becomes-a-queue-entry-in-645-seconds-and-the-kernel-never-knew)
+records as the state of the cloud pipeline right now. This one compares the document
+against itself, so it works with no history at all.
+
+| `constructed_v2` | before | after |
+|---|---:|---:|
+| precision | 0.740 | 0.783 |
+| **recall** | 0.787 | **1.000** |
+| **F1** | 0.763 | **0.879** |
+| lines that do not add up, caught | 1 / 5 | **5 / 5** |
+| amount spikes caught | 3 / 9 | **9 / 9** |
+| the right reason named | 77% | **100% (47/47)** |
+
+**Every deviation in the corpus is now caught.** False negatives: 0.
+
+Amount spikes went from 3 of 9 to 9 of 9 without touching the amount rule, and the reason
+is worth stating: **inflating a total also stops the lines adding up.** The arithmetic
+catches the six that hid inside the supplier's historical range, because a wider range
+cannot hide a document contradicting itself.
+
+That forced a correction to the scorer. `eval/run_eval.py` mapped each deviation to
+exactly one acceptable finding code, so an amount spike explained as *"the items do not
+add up to the total"* scored as the wrong reason — while being the more precise account of
+what is wrong. Reasons are now sets, and both codes are accepted for that deviation.
+
+**The frozen corpus is unchanged: precision 0.800, recall 0.963, F1 0.874, 52 of 52
+reasons right.** It has no line items, so the new rule never fires there and the published
+baseline is exactly what it was.
+
+### What it deliberately does not do
+
+- **Fewer than two lines, or an unreadable line, is silence.** A line we could not parse
+  is a fact about our OCR, not about the invoice; claiming a discrepancy there would fire
+  on every scanned document, which is the false-positive class
+  [§29](#29-real-paper-a-96-false-positive-rate-that-only-real-documents-could-show)
+  found on real paper.
+- **A 2% tolerance.** Real invoices carry rounding, a shipping line the parser missed, a
+  discount applied to the total. This rule exists to catch a total that was altered, not
+  to argue about a cent.
+- **It raises a finding; it authorises nothing.** The 13 false positives on the wider
+  corpus are unchanged by it — they were already there, from the amount and duplicate
+  rules.

@@ -24,6 +24,12 @@ EXPECTED_PRESENCE = 0.8
 CHECKED_FIELDS = ("vendor_name", "invoice_number", "amount_total",
                   "bank_account", "vendor_address")
 
+# How far the line items may miss the stated total before it is a finding. Real invoices
+# carry rounding, a shipping line the parser missed, or a discount applied to the total.
+# Generous on purpose: this rule exists to catch a total that was altered, not to argue
+# about a cent.
+SUM_TOLERANCE = 0.02
+
 
 def _norm(s: str | None) -> str:
     """Loose normalisation for comparing free text like addresses."""
@@ -49,9 +55,46 @@ def _to_float(s: str | None) -> float | None:
         return None
 
 
+def _line_items_sum(record: InvoiceRecord) -> Finding | None:
+    """The invoice shows its working. Do the lines add up to the total it states?
+
+    Every other rule in this file compares the document against the SUPPLIER'S HISTORY,
+    so all of them need a known vendor and enough past invoices. This one compares the
+    document against itself, which means it works on a first-time supplier, on a corpus
+    with no history at all, and on a document whose vendor nobody recognises -- the
+    cases where every other rule here is silent.
+
+    FINDINGS §28 measured the gap: on a corpus with line items, an altered total was
+    caught 1 time in 5 and the reason was right 0 times. There was no arithmetic
+    anywhere in this system.
+    """
+    if len(record.line_item_amounts) < 2:
+        return None                      # nothing to add up, or nothing to check against
+    stated = _to_float(record.get("amount_total"))
+    if stated is None:
+        return None
+    parts = [_to_float(f.value) for f in record.line_item_amounts]
+    if any(p is None for p in parts):
+        # A line we could not read is not a discrepancy. Claiming one would be a finding
+        # about our own OCR, and it would fire on every scanned document.
+        return None
+    summed = sum(parts)                                   # type: ignore[arg-type]
+    if stated == 0 or abs(summed - stated) <= max(abs(stated) * SUM_TOLERANCE, 0.01):
+        return None
+    return Finding(
+        "LINE_ITEMS_DO_NOT_SUM", "amount_total",
+        f"{len(parts)} line items total {summed:,.2f}, the invoice states {stated:,.2f}")
+
+
 def evaluate(record: InvoiceRecord, pattern: VendorPattern | None) -> Decision:
     """Classify one invoice as PASS or EXCEPTION against its vendor's own history."""
     findings: list[Finding] = []
+
+    # Runs before the vendor check, because it is the one rule here that does not need a
+    # vendor. An unknown supplier whose invoice does not add up should say both things.
+    arithmetic = _line_items_sum(record)
+    if arithmetic is not None:
+        findings.append(arithmetic)
 
     if pattern is None or pattern.n_invoices == 0:
         findings.append(

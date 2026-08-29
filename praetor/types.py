@@ -39,6 +39,11 @@ class InvoiceRecord:
     tax_rate: Field | None = None
     vendor_address: Field | None = None
     line_item_count: int = 0
+    # The amounts on the line-item rows, in document order. Tainted like every other
+    # extracted value. They exist so a rule can add them up: the invoice states a total
+    # AND shows its working, and the two disagreeing is a fact about the document that
+    # needs no history, no supplier and no model to establish.
+    line_item_amounts: list[Field] = field(default_factory=list)
 
     def get(self, name: str) -> str | None:
         f = getattr(self, name, None)

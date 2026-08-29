@@ -19,15 +19,26 @@ from collections import defaultdict
 from pathlib import Path
 
 # deviation we introduced -> finding code the detector should raise
-EXPECTED = {
-    "BANK_ACCOUNT_CHANGED": "BANK_UNKNOWN",
-    "CURRENCY_CHANGED": "CURRENCY_MISMATCH",
-    "TAX_RATE_CHANGED": "TAX_RATE_MISMATCH",
-    "ADDRESS_CHANGED": "ADDRESS_MISMATCH",
-    "AMOUNT_SPIKE": "AMOUNT_OUT_OF_RANGE",
-    "DUPLICATE_INVOICE_NUMBER": "DUPLICATE_INVOICE",
-    "MISSING_BANK_ACCOUNT": "MISSING_FIELD",
+# A deviation can have more than one correct explanation, so these are sets.
+#
+# `AMOUNT_SPIKE` is the case that forced it. On a corpus with line items, inflating the
+# total also stops the lines adding up, and "the items do not add up to the total" is a
+# more precise account of what is wrong than "bigger than this supplier's usual". Scoring
+# only the second would mark the better answer wrong.
+EXPECTED: dict[str, frozenset[str]] = {
+    "BANK_ACCOUNT_CHANGED": frozenset({"BANK_UNKNOWN"}),
+    "CURRENCY_CHANGED": frozenset({"CURRENCY_MISMATCH"}),
+    "TAX_RATE_CHANGED": frozenset({"TAX_RATE_MISMATCH"}),
+    "ADDRESS_CHANGED": frozenset({"ADDRESS_MISMATCH"}),
+    "AMOUNT_SPIKE": frozenset({"AMOUNT_OUT_OF_RANGE", "LINE_ITEMS_DO_NOT_SUM"}),
+    "DUPLICATE_INVOICE_NUMBER": frozenset({"DUPLICATE_INVOICE"}),
+    "MISSING_BANK_ACCOUNT": frozenset({"MISSING_FIELD"}),
+    "LINE_ITEMS_MISMATCH": frozenset({"LINE_ITEMS_DO_NOT_SUM"}),
 }
+
+
+def _reason_right(dev: str | None, codes) -> bool:
+    return bool(dev) and bool(EXPECTED.get(dev, frozenset()) & set(codes))
 
 
 def prf(tp: int, fp: int, fn: int) -> tuple[float, float, float]:
@@ -81,7 +92,7 @@ def main() -> None:
 
     # --- reason level: did we flag it for the RIGHT reason? ---
     right = sum(1 for d, dev in truth.items()
-                if dev and d in pred and EXPECTED.get(dev) in pred[d])
+                if dev and d in pred and _reason_right(dev, pred[d]))
     caught = tp or 1
     print(f"\n  correct reason     : {right}/{tp}  ({right / caught * 100:.0f}% of catches)")
 
@@ -93,7 +104,7 @@ def main() -> None:
         per[dev]["n"] += 1
         if doc_id in pred:
             per[dev]["hit"] += 1
-            if EXPECTED.get(dev) in pred[doc_id]:
+            if _reason_right(dev, pred[doc_id]):
                 per[dev]["reason"] += 1
 
     print(f"\n{'deviation':28} {'n':>4} {'found':>6} {'right reason':>13}")

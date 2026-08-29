@@ -100,3 +100,60 @@ if __name__ == "__main__":
         fn()
         print(f"ok  {fn.__name__}")
     print(f"\n{len(fns)} passed")
+
+# ------------------------------------------------- the invoice checked against itself
+
+def _rec(total, lines):
+    from praetor.types import Field, InvoiceRecord, Provenance
+    r = InvoiceRecord(doc_id="d")
+    prov = Provenance(doc_hash="h", span_id="s", tainted=True)
+    if total is not None:
+        r.amount_total = Field(value=total, prov=prov)
+    r.line_item_amounts = [Field(value=v, prov=prov) for v in lines]
+    return r
+
+
+def test_lines_that_do_not_add_up_to_the_total_are_a_finding():
+    """The one rule here that needs no supplier and no history: the invoice states a
+    total and shows its working, and the two disagree.
+
+    FINDINGS §28 measured the gap it closes -- an altered total was caught 1 time in 5
+    and the reason was right 0 times, because there was no arithmetic in this system.
+    """
+    from praetor.baseline_rules import _line_items_sum
+
+    f = _line_items_sum(_rec("1,000.00", ["100.00", "200.00", "300.00"]))
+    assert f is not None and f.code == "LINE_ITEMS_DO_NOT_SUM"
+    assert "600.00" in f.detail and "1,000.00" in f.detail
+
+
+def test_lines_that_do_add_up_are_silent():
+    from praetor.baseline_rules import _line_items_sum
+    assert _line_items_sum(_rec("600.00", ["100.00", "200.00", "300.00"])) is None
+    # rounding, and a total nudged inside the tolerance, must not fire
+    assert _line_items_sum(_rec("600.01", ["100.00", "200.00", "300.00"])) is None
+
+
+def test_an_unreadable_line_is_not_a_discrepancy():
+    """A line we could not parse is a fact about our OCR, not about the invoice. Claiming
+    a discrepancy there would fire on every scanned document -- which is exactly the
+    class of false positive §29 found on real paper."""
+    from praetor.baseline_rules import _line_items_sum
+    assert _line_items_sum(_rec("600.00", ["100.00", "not a number", "300.00"])) is None
+
+
+def test_it_needs_something_to_check():
+    from praetor.baseline_rules import _line_items_sum
+    assert _line_items_sum(_rec("600.00", [])) is None
+    assert _line_items_sum(_rec("600.00", ["600.00"])) is None      # one line proves nothing
+    assert _line_items_sum(_rec(None, ["100.00", "200.00"])) is None
+
+
+def test_it_fires_without_a_vendor_pattern():
+    """Every other rule in the file compares against the supplier's history and is silent
+    on a first-time supplier. This one is not, and that is the point of it."""
+    from praetor.baseline_rules import evaluate
+    d = evaluate(_rec("1,000.00", ["100.00", "200.00"]), None)
+    codes = {f.code for f in d.findings}
+    assert "LINE_ITEMS_DO_NOT_SUM" in codes
+    assert "UNKNOWN_VENDOR" in codes, "both facts should be reported, not just one"

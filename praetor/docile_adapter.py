@@ -65,6 +65,20 @@ def to_record(annotation: dict, doc_hash: str, doc_id: str) -> InvoiceRecord:
 
     rec.line_item_count = len(line_items)
 
+    # The line amounts, in document order, so `praetor/baseline_rules.py` can add them
+    # up. Collected in a second pass rather than in the loop above, because that loop
+    # takes the FIRST occurrence of each field type and there are deliberately many of
+    # these. They carry provenance like everything else.
+    for fld in annotation.get("field_extractions", []):
+        if fld.get("fieldtype") == "line_item_amount":
+            rec.line_item_amounts.append(Field(
+                value=str(fld.get("text", "")).strip(),
+                prov=Provenance(
+                    doc_hash=doc_hash,
+                    span_id=_span_id(int(fld.get("page", 0)), fld.get("bbox", [0, 0, 0, 0])),
+                    tainted=True,
+                )))
+
     # The moment values acquire provenance. Everything downstream inherits the taint
     # recorded here, so this is where a trace should be able to start.
     with trace.span("extract",
