@@ -16,6 +16,8 @@
 #   make ingest     the automated front door, offline and free
 #   make load       the deployed surface under concurrent load
 #   make tf-check   the infrastructure as code: format, init, validate
+#   make bench      build VSB, the value-substitution benchmark (695 cases)
+#   make adaptive   the attacker moves second: success against attack budget
 #   make verify     everything that needs no API key, end to end
 #
 # Targets that spend nothing are the default. The three that call the Gemini API
@@ -25,7 +27,7 @@
 PY := $(shell [ -x .venv/bin/python ] && echo .venv/bin/python || echo python3)
 RUN := PYTHONPATH=. $(PY)
 
-.PHONY: help install test demo verify corpus rules db dashboard serve trace readpath canary pathb app pdf volume attacks adjudicate twopath armor ingest tenancy queue api web web-test load tf-check tf-plan diagram clean
+.PHONY: help install test demo verify corpus rules db dashboard serve trace readpath canary pathb app pdf volume attacks adjudicate twopath armor ingest tenancy queue api web web-test load tf-check tf-plan diagram clean bench bench-score adaptive finetune-data finetune-eval
 
 help:
 	@sed -n '2,10p' Makefile | sed 's/^# \?//'
@@ -65,6 +67,51 @@ readpath:
 
 canary:
 	$(RUN) eval/run_canary.py
+
+# VSB, the value-substitution benchmark. `bench` regenerates the 695 cases and checks
+# the file against its own checksum -- it calls no model and costs nothing. Running a
+# system over it needs a reader:
+#
+#   python benchmark/run_praetor.py --reader ollama --tier core
+#   python benchmark/run_naive.py   --reader ollama --tier core
+#   make bench-score PRED=out/vsb_praetor.jsonl
+#
+# See benchmark/README.md. The hosted free tier is 20 requests/day/model, so the
+# reference runs are on-device -- which is also what makes them reproducible with no key.
+bench:
+	$(RUN) benchmark/build.py
+	@cd benchmark/data && shasum -a 256 -c vsb.sha256
+
+PRED ?= out/vsb_praetor.jsonl
+
+bench-score:
+	$(RUN) benchmark/score.py --predictions $(PRED) --tier $(TIER)
+
+TIER ?= all
+
+# The attacker moves second: nine strategies, each written against a named component,
+# and attack success plotted against attack budget at two points -- the privileged sink
+# and the adjudicator's vote. `oracle` and `compromised` call no model and cost nothing;
+# `compromised` is the upper bound, a reader that has been entirely lost.
+adaptive:
+	$(RUN) eval/run_adaptive.py --reader $(READER) --docs $(DOCS_ADAPTIVE) --no-adjudicator
+
+READER ?= compromised
+DOCS_ADAPTIVE ?= 50
+
+# Fine-tuning the on-device reader. Needs the arm64 MLX environment -- see
+# finetune/README.md, which is the runbook. `finetune-data` is free and needs no GPU.
+finetune-data:
+	$(RUN) finetune/prepare.py --holdout $(HOLDOUT)
+
+HOLDOUT ?= letterhead
+
+finetune-eval:
+	PYTHONPATH=. .venv-mlx/bin/python finetune/eval_reader.py \
+		$(if $(ADAPTER),--adapter $(ADAPTER),) --order $(ORDER) --out $(FT_OUT)
+
+ORDER ?= shuffled
+FT_OUT ?= out/finetune_eval.jsonl
 
 # The second extraction path: fit it (held out by layout) and then try to break it.
 # Deterministic, no model, no network. FINDINGS sec 16 and 17.

@@ -1,5 +1,6 @@
 .env
 .venv/
+.venv-mlx/
 __pycache__/
 *.pyc
 .adk/
@@ -11,6 +12,11 @@ data/*.zip
 
 # local run artefacts
 out/
+finetune/data/
+# LoRA checkpoints. The FINAL adapter is committed -- it is the artifact behind a
+# published number and it makes FINDINGS 24 reproducible without a GPU. The
+# intermediate ones are 8 MB each and derive from the same run.
+finetune/adapters/*/0*_adapters.safetensors
 *.log
 .playwright-mcp/
 

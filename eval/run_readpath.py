@@ -40,8 +40,8 @@ from praetor.docile_adapter import (load_annotation, span_kinds_of,  # noqa: E40
                                     spans_of, to_record)
 from praetor.resolver import resolve  # noqa: E402
 
-FIELDS = ("vendor_name", "invoice_number", "amount_total",
-          "currency", "bank_account", "tax_rate", "vendor_address")
+from eval.readscore import FIELDS, outcome, render, score_rows  # noqa: E402
+
 
 
 def main() -> None:
@@ -73,7 +73,7 @@ def main() -> None:
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    per_field = {f: Counter() for f in FIELDS}
+    rows: list[dict] = []
     rejections: Counter = Counter()
     rejection_examples: list[str] = []
     canary_fired: Counter = Counter()
@@ -101,20 +101,8 @@ def main() -> None:
             row = {"doc_id": p.stem, "rejected": res.rejected,
                    "canary": [c.code for c in canaries], "fields": {}}
             for f in FIELDS:
-                expected = truth.get(f)
-                got = res.record.get(f)
-                if expected is None and got is None:
-                    outcome = "absent"
-                elif got is None:
-                    outcome = "missed"
-                elif expected is None:
-                    outcome = "spurious"
-                elif got.strip() == expected.strip():
-                    outcome = "correct"
-                else:
-                    outcome = "wrong"
-                per_field[f][outcome] += 1
-                row["fields"][f] = outcome
+                row["fields"][f] = outcome(truth.get(f), res.record.get(f))
+            rows.append(row)
 
             for attr, why in res.rejected.items():
                 kind = ("literal value" if "not a span reference" in why
@@ -129,30 +117,12 @@ def main() -> None:
 
     elapsed = time.time() - started
 
-    # ---- extraction accuracy, the metric the spec asked for
-    tp = sum(c["correct"] for c in per_field.values())
-    wrong = sum(c["wrong"] for c in per_field.values())
-    missed = sum(c["missed"] for c in per_field.values())
-    spurious = sum(c["spurious"] for c in per_field.values())
-    retrieved = tp + wrong + spurious
-    relevant = tp + wrong + missed
-    precision = tp / retrieved if retrieved else 0.0
-    recall = tp / relevant if relevant else 0.0
-    f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
-
-    print("\n" + "=" * 66)
-    print(f"EXTRACTION ACCURACY  ({len(docs)} documents, model {label})")
-    print(f"  correct            {tp}")
-    print(f"  wrong field        {wrong}")
-    print(f"  missed             {missed}")
-    print(f"  spurious           {spurious}")
-    print(f"\n  precision {precision:.3f}   recall {recall:.3f}   F1 {f1:.3f}")
-
-    print("\n  by field:")
-    print(f"    {'field':<18}{'correct':>8}{'wrong':>7}{'missed':>8}{'absent':>8}")
-    for f in FIELDS:
-        c = per_field[f]
-        print(f"    {f:<18}{c['correct']:>8}{c['wrong']:>7}{c['missed']:>8}{c['absent']:>8}")
+    # ---- extraction accuracy, the metric the spec asked for.
+    # Computed by eval/readscore.py, not here: finetune/eval_reader.py scores the MLX
+    # base model and the fine-tune with the same function, and FINDINGS puts all four
+    # readers in one table. Two implementations of one metric is DECISIONS #15's mistake.
+    score = score_rows(rows)
+    print("\n" + render(score, f"model {label}", len(docs)))
 
     # ---- the guarantee, counted
     total_rejected = sum(rejections.values())

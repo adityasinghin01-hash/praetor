@@ -103,7 +103,7 @@ sure the value never reaches the payment sink.
 
 **Prerequisites:** Python **3.11 or newer** and `make`. Nothing else. No cloud account,
 no API key, no billing. Verified on 27 Aug from a clean clone on **3.13.14 and 3.14.6** —
-all 566 tests pass on both. (An earlier draft of this line said "not 3.14", which was
+all 598 tests pass on both. (An earlier draft of this line said "not 3.14", which was
 left over from a `torch` dependency the project no longer has.)
 
 ```bash
@@ -282,6 +282,42 @@ No key, no quota, no cost. On our first run it answered `"currency": "USD"` — 
 value where a reference was required — and the resolver rejected it. That is the design
 working, unstaged. See [FINDINGS.md §7](FINDINGS.md).
 
+### The benchmark, the fine-tune, and the attacker who moves second
+
+Phase 8's three pieces. All three run with **no API key**, and two of them with no model
+at all.
+
+**`benchmark/` — VSB, 700 cases.** The first benchmark for value substitution in document
+extraction. BIPIA, AgentDojo and InjecAgent all score whether an agent took an
+attacker-chosen *action*; a document extractor takes no actions, so none of them fits
+([FINDINGS.md §3](FINDINGS.md)). This scores whether the **value** that came back is the
+attacker's. Every case carries the document twice — as spans and as flat text — so a
+plain-text extractor and a span contract are scored by one function on one document.
+
+```bash
+make bench                                                    # regenerate, verify checksum
+python benchmark/run_praetor.py --reader compromised           # no model at all
+python benchmark/score.py --predictions out/vsb_praetor.jsonl
+```
+
+220 of the 700 cases carry **no attack**, including 60 that carry the exact wording of a
+successful attack over the vendor's *own genuine account*. That is deliberate: a system
+that escalates everything scores a perfect 0.000 attack success rate, and the scorer
+reports 0.000 utility beside it so the trick does not work.
+
+**`finetune/` — the on-device reader, trained on an M1.** 27 minutes, no cloud, no key.
+It got **6x better** on a page template it trained on and **10x worse** on one it never
+saw, because it memorised the training layouts' margins. Runbook and the reason in
+[`finetune/README.md`](finetune/README.md) and [FINDINGS.md §24](FINDINGS.md).
+
+**`eval/run_adaptive.py` — the attacker moves second.** Nine strategies ordered by how much
+of `praetor/` the attacker has read, from prose payloads to a compromised vendor mailbox,
+with attack success plotted against attack budget.
+
+```bash
+make adaptive        # 50 documents, 10 rungs, deterministic, free
+```
+
 ---
 
 ## Reproducing every number we publish
@@ -290,13 +326,16 @@ Nothing in this repo is an industry estimate or a figure typed in by hand.
 
 | Claim | Command | Needs a key? |
 |---|---|---|
-| 115 invariants pass | `make test` | no |
+| 598 tests pass | `make test` | no |
 | Rules baseline: **P 0.800 · R 0.963 · F1 0.874** | `make rules` | no |
 | Corpus regenerates bit-for-bit | `make verify` | no |
 | Kernel throughput: **~4,100 docs/second**, one core | `make volume` | no |
 | Dashboard: 65 flagged → 47 human, precision 1.000 | `make dashboard` | no |
 | Undefended injection rate: **60% (12/20)** | `make attacks` | yes |
 | Agent removes **28%** of human touches, 0 wrong | `make adjudicate` | yes |
+| VSB: **700** cases, byte-for-byte reproducible | `make bench` | no |
+| Compromised reader beats **0 of 480** attacks | `python benchmark/run_praetor.py --reader compromised` | no |
+| Attacker moves second: **0 of 450** reach the sink | `make adaptive` | no |
 
 ## What the tests actually assert
 
@@ -327,7 +366,10 @@ praetor/        guard (the mechanism, no domain) · resolver · canary · gate
 praetor/agents/ reader (Gemini/Vertex) · local_reader (Gemma/Ollama) · exception_agent
 eval/           make_invoices · build_vendor_master · find_exceptions · run_eval
                 measure_attacks · run_adjudication · run_canary · fetch_sroie
-attacks/        payload taxonomy + public-dataset loader
+                run_adaptive (the attacker moves second) · readscore (one scorer)
+attacks/        payload taxonomy (20, published as n=20) + 4 non-prose + account shapes
+benchmark/      VSB: build (700 cases) · score (stdlib only) · two reference systems
+finetune/       LoRA on the on-device reader: prepare · eval_reader · README (runbook)
 dashboard/      language (every word a person reads) · api (the JSON the tabs read)
                 gauntlet (try to break it) · attack_log · ratelimit
                 app.html (the three tabs) · serve.py · build.py -> index.html

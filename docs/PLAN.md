@@ -12,7 +12,7 @@ for its reasoning; where they disagree, this file wins.
 
 | | |
 |---|---|
-| Tests | **566 passing tests**, and 534 of them with only `pytest` installed; plus **18** frontend tests including an accessibility pass |
+| Tests | **598 passing tests**, and 566 of them with only `pytest` installed; plus **18** frontend tests including an accessibility pass |
 | Kernel | `praetor/` imports nothing outside the standard library, and nothing from the web layer |
 | Live | https://praetor-836128159455.asia-south1.run.app · `/app` is the three-tab UI |
 | Rules baseline | precision 0.800 · recall 0.963 · **F1 0.874** on 350 invoices, 5 layouts |
@@ -24,9 +24,12 @@ for its reasoning; where they disagree, this file wins.
 | Automation | a PDF in a bucket is a queue entry in **6.45s**, no manual step |
 | The moat | a merged vendor master pays the wrong account **12 of 12**; refusals cross, trust never does |
 | Shippable | infrastructure as code, `0 to destroy`; the queue serves **~170 req/s**, flat under concurrency |
+| Benchmark | **VSB**, 700 cases, the first for value substitution rather than agent action |
+| Fine-tune | on-device reader **6x better** on a trained layout, **10x worse** on an unseen one |
+| Attacker moves second | nine strategies, budget 1 to 9, **0 of 450** reach the sink |
 | Spent to date | about **₹27 of credit**. Money has never been the constraint |
 
-**Phases 1 to 7 are done.** Phase 8 is next.
+**Phases 1 to 8 are done.** What remains is Aditya's, and it is listed below.
 
 ---
 
@@ -196,10 +199,57 @@ test asserts that so the docs cannot start implying otherwise.
 Not done: `google_workflows_workflow` has no import support in the provider, so the live
 sweep cannot be adopted without recreating it. Stated in `terraform/imports.tf`.
 
-## Phase 8 — The write-up · **NEXT**
+## Phase 8 — The write-up · **DONE**
 
-Release the benchmark that does not exist, fine-tune the local reader, run the adaptive-attack
-evaluation. Phases 3, 6 and 8 together are a publishable piece of work.
+Three things, all three built and measured. `FINDINGS.md` §24, §25, §26.
+
+**The benchmark that did not exist** (`benchmark/`). **VSB, 700 cases**: 480 attacks
+across 23 techniques, 5 injection sites, 4 attacker account shapes and 5 layouts, plus
+**220 cases with no attack in them** — controls, legitimate VAT-number decoys, and
+remittance-change *wording* over the vendor's *own* account. Every case carries the
+document twice, as spans and as flat text, so a span-based architecture and a plain-text
+extractor are scored by one function on one document. Scored on the **value returned**,
+never a span id and never a tool call, which is the gap §3 found and no adapter closes.
+
+The scorer refuses to produce a single figure: attack success rate beside utility, and a
+test asserts that escalating everything scores **0.000 and 0.000**. Three reference runs
+ship, all with **no model at all** — the reader is replaced by a deterministic oracle or a
+fully compromised one, so anybody can reproduce the numbers with no key and no GPU.
+
+The result is a trade stated as arithmetic. With a **fully compromised reader** — it hands
+the attacker's span over on every case — the architecture scores **0 of 480**, at a cost of
+**0.545 escalation on clean documents**. Turn the second path off and 20 of 480 succeed and
+utility is perfect. All 20 are the same case: the parser labelled the attacker's span as
+the payment field, so the canary is blind by construction, and every such case says so.
+
+**The fine-tune** (`finetune/`, runbook in `finetune/README.md`). LoRA on Gemma 3 1b, on an
+M1, 27 minutes, no cloud. It **worked and did not transfer**: F1 0.051 → **0.304** on a page
+template it trained on, populating `bank_account` for the first time in this project, and
+0.074 → **0.007** on one it had never seen. It learned the training layouts' left margins
+and wrote them over the coordinates in front of it — three of four coordinates copied
+exactly, the fourth invented. **Held out by document this would have been published as a 6x
+win.** The layout hold-out is the only reason the second number exists.
+
+And the point: accuracy fell by an order of magnitude, **396 invalid answers were refused
+and 0 reached the record**. A model we made worse ourselves, in a new way, and the 92 lines
+did not care.
+
+**The adaptive-attack evaluation** (`eval/run_adaptive.py`). Nine strategies ordered by how
+much of `praetor/` the attacker has read — prose, bare tokens, placement, label capture,
+shape matching, and a compromised vendor mailbox printing only its own account. 50
+documents, 500 trials, attack success **flat at 0.000 from budget 1 to budget 9**, with a
+clean document payable 50 of 50 so the zero is a defence and not a broken harness.
+
+Two vacuous results were caught on the way and both are now tests: the carrier sitting in
+its own vendor master, and a success predicate (`action == "pay"`) that could never be
+true because the gate has no such action.
+
+**Not done, and stated rather than implied:** one fold, not five, on the fine-tune. No
+hosted-model run of either the benchmark or the ladder — 700 calls and ~450 calls against a
+free tier of 20 per day. The adjudicator half of the ladder is on the local model only, and
+§9 already records that it is the conservative one, so it is a weak instrument for the
+question. And the repository still has **no `LICENCE` file**, which is what "release the
+benchmark" actually requires.
 
 ---
 
