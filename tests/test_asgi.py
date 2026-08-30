@@ -540,8 +540,8 @@ def test_a_signed_in_visitor_reaches_the_app_and_its_deep_links(client):
 def test_the_sign_in_page_wears_the_app_s_own_direction(anonymous):
     """The first screen states the product and the security boundary immediately."""
     page = anonymous.get("/login").text
-    assert "--night:#050816" in page
-    assert "--violet:#8b5cf6" in page and "--cyan:#22d3ee" in page
+    assert "--canvas:#f5f1e8" in page
+    assert "--sage:#5f7f72" in page and "--sky:#6fa9b8" in page
     assert "Untrusted document" in page and "Policy gate" in page
     assert "Signup never grants payment approval" in page
 

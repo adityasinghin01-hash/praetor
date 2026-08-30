@@ -59,8 +59,8 @@ export function App() {
       <Suspense fallback={null}>
       <TargetCursor
         targetSelector=".cursor-target"
-        cursorColor="#22d3ee"
-        cursorColorOnTarget="#a78bfa"
+        cursorColor="#6fa9b8"
+        cursorColorOnTarget="#5f7f72"
         spinDuration={0}
         hideDefaultCursor={false}
       />

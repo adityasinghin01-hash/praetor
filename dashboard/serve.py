@@ -112,42 +112,43 @@ SEED_BLOCK = """<div class="seed">
 # application until their session is valid. These braces are doubled because the page is
 # formatted with escaped values below.
 AUTH_STYLES = """
-:root {{ --night:#050816; --panel:#0c1226; --panel-2:#121a35; --text:#f7f8ff;
-  --muted:#9ca9c8; --violet:#8b5cf6; --cyan:#22d3ee; --green:#34d399;
-  --danger:#fb7185; --line:rgba(148,163,184,.2); --ui:"Geist Variable",Inter,system-ui,sans-serif;
+:root {{ --canvas:#f5f1e8; --panel:rgba(255,255,255,.68); --panel-2:#eef2eb; --text:#26352f;
+  --muted:#65756e; --sage:#5f7f72; --sky:#6fa9b8; --green:#4d8a6b;
+  --peach:#e7b99d; --danger:#b85f5f; --line:rgba(62,82,72,.16); --ui:"Geist Variable",Inter,system-ui,sans-serif;
   --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace; }}
 * {{ box-sizing:border-box; }}
 body {{ margin:0; min-height:100vh; color:var(--text); font:1rem/1.55 var(--ui);
-  background:radial-gradient(circle at 12% 12%,rgba(139,92,246,.23),transparent 32rem),
-    radial-gradient(circle at 88% 82%,rgba(34,211,238,.14),transparent 30rem),var(--night); }}
-body::before {{ content:""; position:fixed; inset:0; pointer-events:none; opacity:.22;
-  background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),
-    linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);
+  background:radial-gradient(circle at 10% 12%,rgba(231,185,157,.48),transparent 30rem),
+    radial-gradient(circle at 90% 16%,rgba(111,169,184,.28),transparent 29rem),
+    radial-gradient(circle at 72% 88%,rgba(129,163,141,.25),transparent 28rem),var(--canvas); }}
+body::before {{ content:""; position:fixed; inset:0; pointer-events:none; opacity:.32;
+  background-image:linear-gradient(rgba(71,91,80,.035) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(71,91,80,.035) 1px,transparent 1px);
   background-size:48px 48px; mask-image:linear-gradient(to bottom,black,transparent 86%); }}
 .auth-shell {{ position:relative; min-height:100vh; display:grid; grid-template-columns:minmax(0,1.15fr) minmax(22rem,.85fr);
   align-items:center; gap:clamp(2rem,7vw,7rem); width:min(76rem,100%); margin:auto;
   padding:clamp(1.25rem,4vw,4rem); }}
-.eyebrow {{ margin:0 0 1.25rem; color:var(--cyan); font:700 .72rem/1 var(--mono);
+.eyebrow {{ margin:0 0 1.25rem; color:var(--sage); font:700 .72rem/1 var(--mono);
   letter-spacing:.18em; text-transform:uppercase; }}
 .brand {{ margin:0; font-size:clamp(3.4rem,9vw,7rem); line-height:.82; letter-spacing:-.07em;
-  background:linear-gradient(110deg,#fff 18%,#c4b5fd 55%,#67e8f9); color:transparent;
+  background:linear-gradient(110deg,#26352f 18%,#5f7f72 58%,#6fa9b8); color:transparent;
   background-clip:text; -webkit-background-clip:text; }}
 .hero h2 {{ max-width:14ch; margin:1.4rem 0 1rem; font-size:clamp(1.45rem,3vw,2.35rem); line-height:1.12; }}
 .hero-copy {{ max-width:37rem; color:var(--muted); font-size:1.04rem; }}
 .pipeline {{ display:flex; flex-wrap:wrap; align-items:center; gap:.55rem; margin-top:2rem;
   color:var(--muted); font:650 .72rem/1.3 var(--mono); letter-spacing:.05em; text-transform:uppercase; }}
-.pipeline b {{ color:var(--text); border:1px solid var(--line); background:rgba(12,18,38,.7);
+.pipeline b {{ color:var(--text); border:1px solid var(--line); background:rgba(255,255,255,.5);
   padding:.58rem .7rem; border-radius:.55rem; }}
-.pipeline i {{ color:var(--cyan); font-style:normal; }}
+.pipeline i {{ color:var(--sky); font-style:normal; }}
 .proof {{ display:grid; grid-template-columns:repeat(3,1fr); gap:.65rem; margin-top:1rem; max-width:38rem; }}
 .proof span {{ min-height:4.8rem; padding:.8rem; border:1px solid var(--line); border-radius:.8rem;
-  background:rgba(12,18,38,.6); color:var(--muted); font-size:.78rem; }}
+  background:rgba(255,255,255,.46); color:var(--muted); font-size:.78rem; backdrop-filter:blur(10px); }}
 .proof strong {{ display:block; color:var(--text); font-size:1rem; margin-bottom:.15rem; }}
 .card {{ position:relative; padding:clamp(1.4rem,4vw,2.25rem); border:1px solid var(--line);
-  border-radius:1.3rem; background:linear-gradient(145deg,rgba(18,26,53,.96),rgba(8,13,29,.94));
-  box-shadow:0 28px 90px rgba(0,0,0,.38),inset 0 1px rgba(255,255,255,.05); backdrop-filter:blur(18px); }}
+  border-radius:1.3rem; background:linear-gradient(145deg,rgba(255,255,255,.8),rgba(247,249,244,.58));
+  box-shadow:0 28px 90px rgba(72,88,78,.16),inset 0 1px rgba(255,255,255,.8); backdrop-filter:blur(22px); }}
 .card::before {{ content:""; position:absolute; inset:-1px; border-radius:inherit; padding:1px;
-  background:linear-gradient(130deg,rgba(139,92,246,.8),transparent 36%,rgba(34,211,238,.55));
+  background:linear-gradient(130deg,rgba(95,127,114,.58),transparent 38%,rgba(111,169,184,.55));
   mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
   mask-composite:exclude; pointer-events:none; }}
 .status {{ display:inline-flex; align-items:center; gap:.45rem; color:var(--green);
@@ -156,24 +157,24 @@ body::before {{ content:""; position:fixed; inset:0; pointer-events:none; opacit
   box-shadow:0 0 14px var(--green); }}
 .card h2 {{ margin:.8rem 0 .25rem; font-size:1.65rem; }}
 .sub {{ margin:0 0 1.55rem; color:var(--muted); font-size:.9rem; }}
-label {{ display:block; margin:1rem 0 .38rem; color:#cbd5e1; font-size:.78rem; font-weight:650; }}
+label {{ display:block; margin:1rem 0 .38rem; color:#42554c; font-size:.78rem; font-weight:650; }}
 input {{ width:100%; border:1px solid var(--line); border-radius:.7rem; padding:.78rem .85rem;
-  background:rgba(2,6,23,.55); color:var(--text); font:inherit; }}
-input:focus {{ outline:2px solid var(--cyan); outline-offset:2px; border-color:transparent; }}
+  background:rgba(255,255,255,.66); color:var(--text); font:inherit; box-shadow:inset 0 1px 2px rgba(62,82,72,.05); }}
+input:focus {{ outline:2px solid var(--sky); outline-offset:2px; border-color:transparent; background:white; }}
 button,.primary-link {{ display:flex; justify-content:center; width:100%; margin-top:1.25rem;
   border:0; border-radius:.72rem; padding:.82rem 1rem; color:white; font:750 .94rem var(--ui);
-  text-decoration:none; cursor:pointer; background:linear-gradient(105deg,var(--violet),#6d5ce7 48%,#0891b2);
-  box-shadow:0 10px 28px rgba(109,92,231,.28); transition:transform .18s,filter .18s; }}
+  text-decoration:none; cursor:pointer; background:linear-gradient(105deg,var(--sage),#6d9383 48%,var(--sky));
+  box-shadow:0 10px 28px rgba(74,111,95,.22); transition:transform .18s,filter .18s; }}
 button:hover,.primary-link:hover {{ transform:translateY(-1px); filter:brightness(1.08); }}
-button:focus-visible,.primary-link:focus-visible,.text-link:focus-visible {{ outline:3px solid var(--cyan); outline-offset:3px; }}
+button:focus-visible,.primary-link:focus-visible,.text-link:focus-visible {{ outline:3px solid var(--sky); outline-offset:3px; }}
 .switch {{ margin:1.25rem 0 0; text-align:center; color:var(--muted); font-size:.86rem; }}
-.text-link {{ color:#a5f3fc; font-weight:700; text-decoration:none; }}
+.text-link {{ color:#3e756c; font-weight:700; text-decoration:none; }}
 .text-link:hover {{ text-decoration:underline; }}
-.err {{ margin-top:1rem; padding:.7rem .8rem; border:1px solid rgba(251,113,133,.35);
-  border-radius:.65rem; background:rgba(251,113,133,.09); color:#fecdd3; font-size:.84rem; }}
+.err {{ margin-top:1rem; padding:.7rem .8rem; border:1px solid rgba(184,95,95,.28);
+  border-radius:.65rem; background:rgba(184,95,95,.08); color:#8e4141; font-size:.84rem; }}
 .seed {{ margin-top:1.2rem; padding-top:1rem; border-top:1px solid var(--line); color:var(--muted);
   font-size:.75rem; line-height:1.7; }}
-.seed code {{ color:#d8b4fe; font-family:var(--mono); }}
+.seed code {{ color:#4f7063; font-family:var(--mono); }}
 .guardrail {{ margin-top:1rem; display:flex; gap:.55rem; color:var(--muted); font-size:.76rem; }}
 .guardrail strong {{ color:var(--green); }}
 @media (max-width:52rem) {{ .auth-shell {{ grid-template-columns:1fr; }} .hero {{ padding-top:2rem; }}
@@ -188,11 +189,11 @@ LOGIN_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <style>""" + AUTH_STYLES + """</style></head><body>
 <main class="auth-shell">
   <section class="hero" aria-labelledby="brand-title">
-    <p class="eyebrow">Autonomous AP · deterministic control</p>
+    <p class="eyebrow">Calm automation · accountable decisions</p>
     <h1 class="brand" id="brand-title">PRAETOR</h1>
-    <h2>Let the agent read hostile invoices. Never let them control the payment.</h2>
-    <p class="hero-copy">PRAETOR converts model output into traceable references, resolves
-    values deterministically, and keeps sensitive actions behind policy and human identity.</p>
+    <h2>Helpful automation, with a human still firmly in control.</h2>
+    <p class="hero-copy">PRAETOR makes invoice review feel clear and manageable. Every
+    suggestion stays traceable to evidence, and sensitive decisions remain yours.</p>
     <div class="pipeline" aria-label="Security pipeline"><b>Untrusted document</b><i>→</i>
       <b>Span references</b><i>→</i><b>Policy gate</b><i>→</i><b>Human approval</b></div>
     <div class="proof"><span><strong>Provenance</strong>Every value points back to evidence</span>
@@ -200,20 +201,20 @@ LOGIN_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
       <span><strong>Cloud native</strong>Gemini + Google Cloud</span></div>
   </section>
   <section class="card" aria-labelledby="form-title">
-    <span class="status">Control plane online</span>
+    <span class="status">Ready when you are</span>
     <h2 id="form-title">Welcome back</h2>
-    <p class="sub">Sign in with your verified identity to enter the review console.</p>
+    <p class="sub">Sign in with your email to continue to your review workspace.</p>
     <form method="POST" action="/login">
-      <label for="email">Work email</label>
+      <label for="email">Email address</label>
       <input id="email" name="email" type="email" autocomplete="username"
              value="{email}" required{emailfocus}>
       <label for="password">Password</label>
       <input id="password" name="password" type="password" autocomplete="current-password"
              value="{password}" required>
-      <button type="submit"{focus}>Enter secure console →</button>
+      <button type="submit"{focus}>Sign in with email →</button>
     </form>
     {error}
-    <p class="switch">New to PRAETOR? <a class="text-link" href="/signup">Create a viewer account</a></p>
+    <p class="switch">New to PRAETOR? <a class="text-link" href="/signup">Sign up with email</a></p>
     <p class="guardrail"><strong>●</strong> Signup never grants payment approval.</p>
     {seed}
   </section>
@@ -225,23 +226,23 @@ SIGNUP_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <style>""" + AUTH_STYLES + """</style></head><body>
 <main class="auth-shell">
   <section class="hero" aria-labelledby="brand-title">
-    <p class="eyebrow">Explore the secured workflow</p>
+    <p class="eyebrow">A thoughtful way to explore PRAETOR</p>
     <h1 class="brand" id="brand-title">PRAETOR</h1>
-    <h2>A front-row seat to an agent that knows where its authority ends.</h2>
-    <p class="hero-copy">Your account receives viewer access to synthetic demo data. You can
-    inspect evidence, provenance, attacks, and agent decisions—but payment approval remains
-    restricted to identities granted the approver role by an administrator.</p>
+    <h2>See how the agent works, at your own pace.</h2>
+    <p class="hero-copy">Create an account with your email to explore synthetic demo data,
+    inspect evidence, and understand each recommendation. Approval authority remains
+    protected and can only be granted by an administrator.</p>
     <div class="pipeline"><b>Viewer by default</b><i>→</i><b>No self-escalation</b><i>→</i>
       <b>Server-enforced roles</b></div>
   </section>
   <section class="card" aria-labelledby="form-title">
-    <span class="status">Least privilege enforced</span>
-    <h2 id="form-title">Create viewer account</h2>
-    <p class="sub">Explore the synthetic PRAETOR demo without gaining approval authority.</p>
+    <span class="status">Private by design</span>
+    <h2 id="form-title">Sign up with email</h2>
+    <p class="sub">Create a viewer account and start exploring the PRAETOR demo.</p>
     <form method="POST" action="/signup">
       <label for="name">Name</label>
       <input id="name" name="name" autocomplete="name" maxlength="80" value="{name}" required autofocus>
-      <label for="email">Work email</label>
+      <label for="email">Email address</label>
       <input id="email" name="email" type="email" autocomplete="username" maxlength="254"
              value="{email}" required>
       <label for="password">Password · 12 characters minimum</label>
@@ -250,7 +251,7 @@ SIGNUP_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
       <label for="confirm">Confirm password</label>
       <input id="confirm" name="confirm" type="password" autocomplete="new-password"
              minlength="12" maxlength="128" required>
-      <button type="submit">Create secure viewer account →</button>
+      <button type="submit">Create account with email →</button>
     </form>
     {error}
     <p class="switch">Already have access? <a class="text-link" href="/login">Sign in</a></p>
