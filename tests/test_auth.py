@@ -81,6 +81,25 @@ def test_a_user_with_no_password_set_cannot_log_in(conn):
     assert auth.authenticate(conn, "nopass@acme.test", "anything") is None
 
 
+def test_signup_creates_only_a_viewer(conn):
+    user = auth.register_viewer(
+        conn, " New.User@Example.test ", "New User", "a long safe password", TENANT)
+
+    assert user == "new.user@example.test"
+    assert auth.authenticate(conn, user, "a long safe password") == user
+    assert store.role_of(conn, user, TENANT) == "viewer"
+
+
+def test_signup_cannot_replace_an_existing_approver(conn):
+    with pytest.raises(auth.RegistrationError):
+        auth.register_viewer(
+            conn, "approver@acme.test", "Not the approver",
+            "a different long password", TENANT)
+
+    assert store.role_of(conn, "approver@acme.test", TENANT) == "approver"
+    assert auth.authenticate(conn, "approver@acme.test", "correct horse")
+
+
 # ---------------------------------------------------------------- sessions
 
 def test_a_session_identifies_its_user(conn):

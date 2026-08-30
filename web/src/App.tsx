@@ -59,8 +59,8 @@ export function App() {
       <Suspense fallback={null}>
       <TargetCursor
         targetSelector=".cursor-target"
-        cursorColor="#0B0B0B"
-        cursorColorOnTarget="#BE2B22"
+        cursorColor="#22d3ee"
+        cursorColorOnTarget="#a78bfa"
         spinDuration={0}
         hideDefaultCursor={false}
       />
@@ -71,7 +71,13 @@ export function App() {
       </a>
 
       <header className="masthead">
-        <h1 className="wordmark display">PRAETOR</h1>
+        <div className="brand-lockup">
+          <span className="brand-mark" aria-hidden="true">P</span>
+          <div>
+            <h1 className="wordmark">PRAETOR</h1>
+            <p className="brand-subtitle">Autonomous AP control plane</p>
+          </div>
+        </div>
         <nav className="tabs" aria-label="Screens">
           {SCREENS.map((s) => (
             <button
@@ -84,7 +90,21 @@ export function App() {
             </button>
           ))}
         </nav>
+        <div className="session-tools">
+          <span className="system-state"><i aria-hidden="true" /> Policy gates active</span>
+          <a className="logout cursor-target" href="/logout">Sign out</a>
+        </div>
       </header>
+
+      <aside className="trust-path" aria-label="PRAETOR trust path">
+        <span><b>01</b> Untrusted document</span>
+        <i aria-hidden="true">&rarr;</i>
+        <span><b>02</b> Evidence spans</span>
+        <i aria-hidden="true">&rarr;</i>
+        <span><b>03</b> Deterministic resolver</span>
+        <i aria-hidden="true">&rarr;</i>
+        <span><b>04</b> Policy + human</span>
+      </aside>
 
       <main id="main" tabIndex={-1}>
         {/* The fallback says what is happening rather than showing a blank frame; on a
