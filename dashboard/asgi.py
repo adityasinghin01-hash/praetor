@@ -409,6 +409,17 @@ def _login_html(error: str = "", email: str = "") -> str:
         seed=seed, fonts=_built_stylesheet())
 
 
+def _signup_html(error: str = "", name: str = "", email: str = "") -> str:
+    """Render the shared least-privilege signup page with escaped values."""
+    import html as _html
+
+    return serve.SIGNUP_PAGE.format(
+        error=f'<div class="err" role="alert">{_html.escape(error)}</div>'
+              if error else "",
+        name=_html.escape(name), email=_html.escape(email),
+        fonts=_built_stylesheet())
+
+
 def _built_stylesheet() -> str:
     """A link to the app's own stylesheet, so the sign-in page uses the real faces.
 
@@ -462,6 +473,45 @@ async def login(request: Request) -> Response:
     # TLS terminates in front of the container on Cloud Run, so the request arrives over
     # http with the original scheme in a header. Marking the cookie Secure on a plain
     # local connection would stop it being sent back at all.
+    https = request.headers.get("x-forwarded-proto", "").lower() == "https"
+    response.set_cookie(serve.COOKIE, token, httponly=True, samesite="strict",
+                        secure=https, path="/")
+    return response
+
+
+@app.get("/signup")
+async def signup_page() -> HTMLResponse:
+    return HTMLResponse(_signup_html())
+
+
+@app.post("/signup")
+async def signup(request: Request) -> Response:
+    form = await request.form()
+    name = str(form.get("name", "")).strip()
+    email = str(form.get("email", "")).strip()
+    password = str(form.get("password", ""))
+
+    key = ratelimit.caller_key(
+        request.headers, (request.client.host if request.client else "", 0))
+    allowed, _retry = serve.SIGNUP_LIMIT.check(key)
+    if not allowed:
+        return HTMLResponse(
+            _signup_html("Too many signup attempts. Please try again later.", name, email),
+            status_code=429)
+    if password != str(form.get("confirm", "")):
+        return HTMLResponse(
+            _signup_html("Passwords do not match.", name, email), status_code=400)
+
+    conn = _conn()
+    try:
+        user = auth.register_viewer(
+            conn, email, name, password, store.DEFAULT_TENANT)
+    except auth.RegistrationError as exc:
+        return HTMLResponse(
+            _signup_html(str(exc), name, email), status_code=400)
+
+    token = auth.start_session(conn, user)
+    response = RedirectResponse("/", status_code=303)
     https = request.headers.get("x-forwarded-proto", "").lower() == "https"
     response.set_cookie(serve.COOKIE, token, httponly=True, samesite="strict",
                         secure=https, path="/")

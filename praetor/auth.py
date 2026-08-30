@@ -25,12 +25,18 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import re
 import secrets
 import sqlite3
 from datetime import datetime, timedelta, timezone
 
 ITERATIONS = 240_000
 SESSION_HOURS = 12
+SIGNUP_ROLE = "viewer"
+
+
+class RegistrationError(ValueError):
+    """A public signup could not be completed without exposing account details."""
 
 
 # ---------------------------------------------------------------- passwords
@@ -168,3 +174,43 @@ def set_password(conn, user_id: str, password: str) -> None:
     else:
         conn.execute("UPDATE users SET password_hash = ? WHERE id = ?",
                      (hash_password(password), user_id.strip().lower()))
+
+
+def register_viewer(conn, email: str, name: str, password: str,
+                    tenant_id: str) -> str:
+    """Create a self-service demo account with the least privileged role.
+
+    Signup deliberately cannot accept a role from the browser. Every account created
+    here is a viewer; the existing approval path still requires a separately seeded or
+    administratively granted ``approver`` membership.
+    """
+    email = (email or "").strip().lower()
+    name = " ".join((name or "").strip().split())
+    if (len(email) > 254 or
+            re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email) is None):
+        raise RegistrationError("Enter a valid email address.")
+    if not name or len(name) > 80:
+        raise RegistrationError("Enter your name (up to 80 characters).")
+    if len(password) < 12 or len(password) > 128:
+        raise RegistrationError("Use a password between 12 and 128 characters.")
+
+    fs = _fs(conn)
+    if fs is not None:
+        if not fs.register_viewer(conn, email, name, hash_password(password), tenant_id):
+            raise RegistrationError("That account cannot be created. Try signing in instead.")
+        return email
+
+    # BEGIN IMMEDIATE makes the existence check and the three writes one operation.
+    from praetor import store
+    try:
+        with store.tx(conn):
+            if conn.execute("SELECT 1 FROM users WHERE id = ?", (email,)).fetchone():
+                raise RegistrationError(
+                    "That account cannot be created. Try signing in instead.")
+            store.add_user(conn, email, name)
+            set_password(conn, email, password)
+            store.grant(conn, email, tenant_id, SIGNUP_ROLE)
+    except sqlite3.IntegrityError as exc:
+        raise RegistrationError(
+            "That account cannot be created. Try signing in instead.") from exc
+    return email

@@ -432,6 +432,31 @@ def test_the_transport_that_serves_the_app_can_be_signed_into(anonymous):
     page = anonymous.get("/login")
     assert page.status_code == 200
     assert '<form method="POST" action="/login">' in page.text
+    assert 'href="/signup"' in page.text
+
+
+def test_signup_issues_a_session_for_a_viewer_account(anonymous, monkeypatch):
+    created = {}
+
+    def register(_conn, email, name, password, tenant):
+        created.update(email=email, name=name, password=password, tenant=tenant)
+        return email
+
+    monkeypatch.setattr(asgi.auth, "register_viewer", register)
+    monkeypatch.setattr(asgi.auth, "start_session", lambda _conn, _user: "viewer-token")
+    r = anonymous.post(
+        "/signup", follow_redirects=False,
+        data={"name": "Demo Viewer", "email": "viewer@example.test",
+              "password": "twelve characters", "confirm": "twelve characters"})
+
+    assert r.status_code == 303
+    assert r.headers["location"] == "/"
+    assert created == {
+        "email": "viewer@example.test", "name": "Demo Viewer",
+        "password": "twelve characters", "tenant": TENANT,
+    }
+    cookie = r.headers["set-cookie"].lower()
+    assert "httponly" in cookie and "samesite=strict" in cookie
 
 
 def test_signing_in_sets_a_session_and_lands_on_the_app(anonymous):
@@ -513,12 +538,12 @@ def test_a_signed_in_visitor_reaches_the_app_and_its_deep_links(client):
 
 
 def test_the_sign_in_page_wears_the_app_s_own_direction(anonymous):
-    """It is the first screen anybody sees. A dark login in front of an ink app is two
-    products wearing one name."""
+    """The first screen states the product and the security boundary immediately."""
     page = anonymous.get("/login").text
-    assert "--paper:#EFEEE8" in page and "--ink:#0B0B0B" in page
-    assert "Shippori Mincho" in page
-    assert "#0e1116" not in page, "the old dark palette is still in the template"
+    assert "--canvas:#f5f1e8" in page
+    assert "--sage:#5f7f72" in page and "--sky:#6fa9b8" in page
+    assert "Untrusted document" in page and "Policy gate" in page
+    assert "Signup never grants payment approval" in page
 
 
 def test_the_form_arrives_filled_off_a_deployed_url(anonymous, monkeypatch):

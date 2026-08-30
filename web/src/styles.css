@@ -24,23 +24,25 @@
 */
 
 :root {
-  /* One world. Ink on paper has no dark mode, so there is no scheme to switch
-     and no @media (prefers-color-scheme) block below. Locked 30 Aug 2026. */
   color-scheme: light;
 
   /* ---- the palette. Three colours, and the third is used twice a page. ---- */
-  --paper:   #EFEEE8;
-  --paper-2: #E7E5DC;   /* a surface set into the page */
-  --paper-3: #DBD8CC;   /* paper in shadow */
-  --ink:     #0B0B0B;
-  --ink-2:   #2A2926;   /* ink thinned, for secondary type */
-  --ink-3:   #6E6C63;   /* paper's own hue pushed toward ink */
-  --seal:    #BE2B22;
+  --paper:   #f5f1e8;
+  --paper-2: rgba(255,255,255,.66);
+  --paper-3: #e7eee7;
+  --ink:     #26352f;
+  --ink-2:   #53675e;
+  --ink-3:   #718179;
+  --seal:    #b8615c;
+  --violet:  #5f7f72;
+  --violet-2:#7f9f91;
+  --cyan:    #5f9eac;
+  --safe:    #4f8a68;
 
   /* ---- line weight. One weight reads as a wireframe; three read as drawn. ---- */
-  --w-hair:  1px;       /* interior detail */
-  --w-mid:   1.5px;     /* structural rule */
-  --w-heavy: 2.5px;     /* outer edge, and the side the shadow falls on */
+  --w-hair:  1px;
+  --w-mid:   1px;
+  --w-heavy: 1px;
 
   /* ---- type ---- */
   --font-display: "Shippori Mincho B1", "Yu Mincho", Georgia, serif;
@@ -49,38 +51,38 @@
 
   /* ---- the chosen motion, as tokens so a screen cannot drift from the decision ---- */
   --press-travel: 3px;                    /* stamp press */
-  --press-shadow: 3px 3px 0 var(--ink);
+  --press-shadow: 0 12px 32px rgba(73,101,87,.14);
   --draw-dur:  0.5s;                      /* draw-on icons: even hand, linear */
   --draw-ease: linear;
   --arrive-rise: 16px;                    /* lift and settle */
   --arrive-dur:  0.46s;
   --arrive-ease: cubic-bezier(.16, 1, .3, 1);
 
-  --radius: 0;        /* manga is drawn with a ruler, not a radius */
-  --radius-sm: 0;
+  --radius: 1rem;
+  --radius-sm: .65rem;
   --gap: 1rem;
-  --shadow: none;     /* depth is hatching and offset, never a blur */
+  --shadow: 0 24px 70px rgba(72,88,78,.13);
 
   /* ---- legacy names from the queue screens, aliased onto the ink palette so the
          old app restyles rather than breaks while it is replaced screen by screen ---- */
   --bg: var(--paper);
   --panel: var(--paper);
   --panel-2: var(--paper-2);
-  --line: rgba(11, 11, 11, 0.20);
-  --line-strong: var(--ink);
+  --line: rgba(62,82,72,.14);
+  --line-strong: rgba(62,82,72,.28);
   --tx: var(--ink);
   --tx-dim: var(--ink-2);
   --tx-faint: var(--ink-3);
-  --accent: var(--ink);
-  --accent-ink: var(--paper);
+  --accent: var(--violet);
+  --accent-ink: #fff;
 
   /* Severity keeps its names, but colour is no longer what carries it — the word
      and the shape do, exactly as rule 1 below already required. */
   --stop: var(--seal);
-  --stop-bg: var(--paper-2);
-  --check: var(--ink);
-  --check-bg: var(--paper-2);
-  --ok: var(--ink);
+  --stop-bg: rgba(184,97,92,.10);
+  --check: var(--cyan);
+  --check-bg: rgba(95,158,172,.11);
+  --ok: var(--safe);
 
   /* ---- shadcn / Watermelon tokens, mapped onto the same palette so registry
          components inherit the direction instead of shipping their own grey ---- */
@@ -90,17 +92,17 @@
   --card-foreground: var(--ink);
   --popover: var(--paper);
   --popover-foreground: var(--ink);
-  --primary: var(--ink);
-  --primary-foreground: var(--paper);
+  --primary: var(--violet);
+  --primary-foreground: #fff;
   --secondary: var(--paper-2);
   --secondary-foreground: var(--ink);
   --muted: var(--paper-2);
   --muted-foreground: var(--ink-3);
   --accent-foreground: var(--paper);
   --destructive: var(--seal);
-  --border: var(--ink);
-  --input: var(--ink);
-  --ring: var(--seal);
+  --border: var(--line);
+  --input: var(--paper-3);
+  --ring: var(--cyan);
   --sidebar: var(--paper);
   --sidebar-foreground: var(--ink);
   --sidebar-primary: var(--ink);
@@ -124,15 +126,33 @@ html {
 
 body {
   margin: 0;
-  background: var(--bg);
+  background:
+    radial-gradient(circle at 7% 8%, rgba(231,185,157,.42), transparent 30rem),
+    radial-gradient(circle at 92% 16%, rgba(111,169,184,.24), transparent 28rem),
+    radial-gradient(circle at 72% 88%, rgba(129,163,141,.19), transparent 28rem),
+    var(--bg);
   color: var(--tx);
   font: 1rem/1.55 var(--font);
   -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: .24;
+  background-image:
+    linear-gradient(rgba(71,91,80,.032) 1px, transparent 1px),
+    linear-gradient(90deg,rgba(71,91,80,.032) 1px, transparent 1px);
+  background-size: 52px 52px;
+  mask-image: linear-gradient(to bottom, black, transparent 85%);
 }
 
 /* Nobody should ever lose the caret. A visible focus ring is not decoration. */
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--cyan);
   outline-offset: 2px;
   border-radius: 4px;
 }
@@ -165,23 +185,33 @@ body {
 .shell { min-height: 100vh; display: flex; flex-direction: column; }
 
 .masthead {
+  position: sticky;
+  top: 0;
+  z-index: 30;
   display: flex;
   align-items: center;
   gap: var(--gap);
-  padding: 0.9rem 1.25rem;
+  padding: 0.78rem clamp(1rem,3vw,2rem);
   border-bottom: 1px solid var(--line);
-  background: var(--panel);
+  background: rgba(255,255,255,.58);
+  backdrop-filter: blur(18px);
   flex-wrap: wrap;
 }
 
+.brand-lockup { display:flex; align-items:center; gap:.72rem; min-width:max-content; }
+.brand-mark {
+  width:2rem; height:2rem; display:grid; place-items:center; border-radius:.62rem;
+  background:linear-gradient(145deg,var(--violet),#789b8b 55%,var(--cyan));
+  color:white; font:800 1rem/1 var(--mono); box-shadow:0 8px 22px rgba(73,101,87,.2);
+}
 .wordmark {
-  font-size: 0.95rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font:800 .9rem/1 var(--font);
+  letter-spacing: 0.16em;
   margin: 0;
 }
+.brand-subtitle { margin:.18rem 0 0; color:var(--tx-faint); font-size:.66rem; letter-spacing:.04em; }
 
-.tabs { display: flex; gap: 0.25rem; margin-left: auto; flex-wrap: wrap; }
+.tabs { display: flex; gap: 0.18rem; margin-left: auto; flex-wrap: wrap; }
 
 .tab {
   background: none;
@@ -189,19 +219,46 @@ body {
   color: var(--tx-dim);
   font: inherit;
   font-size: 0.9rem;
-  padding: 0.45rem 0.85rem;
+  padding: 0.42rem 0.7rem;
   border-radius: var(--radius-sm);
   cursor: pointer;
 }
-.tab:hover { color: var(--tx); background: var(--panel-2); }
+.tab:hover { color: var(--tx); background: rgba(95,127,114,.08); }
 .tab[aria-current="page"] {
-  color: var(--tx);
-  background: var(--panel-2);
-  border-color: var(--line-strong);
+  color: #32473e;
+  background: rgba(95,127,114,.13);
+  border-color: rgba(95,127,114,.28);
   font-weight: 600;
 }
 
-main { flex: 1; padding: 1.25rem; max-width: 68rem; width: 100%; margin: 0 inline; }
+.session-tools { display:flex; align-items:center; gap:.7rem; margin-left:.25rem; }
+.system-state { display:flex; align-items:center; gap:.4rem; color:var(--safe); font-size:.68rem; font-weight:700; white-space:nowrap; }
+.system-state i { width:.42rem; height:.42rem; border-radius:50%; background:var(--safe); box-shadow:0 0 12px var(--safe); }
+.logout { color:var(--tx-dim); border-left:1px solid var(--line); padding-left:.7rem; font-size:.75rem; text-decoration:none; }
+.logout:hover { color:var(--cyan); }
+
+.trust-path {
+  display:flex; justify-content:center; align-items:center; gap:clamp(.45rem,1.8vw,1.2rem);
+  padding:.62rem 1rem; border-bottom:1px solid var(--line); color:var(--tx-faint);
+  background:linear-gradient(90deg,rgba(255,255,255,.42),rgba(111,169,184,.08));
+  font:650 .67rem/1.2 var(--mono); letter-spacing:.03em; text-transform:uppercase;
+}
+.trust-path span { white-space:nowrap; }
+.trust-path b { color:var(--cyan); margin-right:.28rem; }
+.trust-path i { color:var(--violet-2); font-style:normal; }
+
+main { position:relative; flex:1; padding:1.6rem 1.25rem 5rem; max-width:68rem; width:100%; margin:0 auto; }
+
+@media (max-width: 66rem) {
+  .tabs { order:3; width:100%; overflow-x:auto; flex-wrap:nowrap; padding-bottom:.1rem; }
+  .tab { white-space:nowrap; }
+  .session-tools { margin-left:auto; }
+}
+@media (max-width: 42rem) {
+  .trust-path { justify-content:flex-start; overflow-x:auto; }
+  .system-state { display:none; }
+  .brand-subtitle { display:none; }
+}
 
 /* --------------------------------------------------------------- summary */
 
@@ -1074,4 +1131,72 @@ button.cmp-side:hover .cmp-value { text-decoration: underline; }
 .canned-btn kbd {
   font-family: var(--mono); font-size: 0.72rem;
   border: var(--w-mid) solid currentColor; padding: 0 0.32rem; flex: none;
+}
+
+/* ------------------------------------------------------- vibrant control-plane finish */
+
+.display { font-family:var(--font); letter-spacing:-.025em; }
+.today-headline {
+  background:linear-gradient(105deg,#26352f 20%,#5f7f72 62%,#5f9eac);
+  color:transparent; background-clip:text; -webkit-background-clip:text;
+}
+.today-through { color:var(--cyan); }
+
+.today-entries,.job-pick,.verdict-card,.stopped-card,.brk-card,.did-wall,.did-check,
+.scan-stage,.ink-rail {
+  border-color:var(--line-strong);
+  background:linear-gradient(145deg,rgba(255,255,255,.76),rgba(248,250,246,.55));
+  box-shadow:var(--shadow),inset 0 1px rgba(255,255,255,.8);
+  backdrop-filter:blur(16px);
+}
+.today-entries,.job-pick,.verdict-card,.stopped-card,.brk-card,.did-wall {
+  border-radius:var(--radius);
+  overflow:hidden;
+}
+.entry { background:transparent; border-color:var(--line); transition:background .18s,transform .18s; }
+.entry:hover:not(:disabled) { background:rgba(95,127,114,.08); transform:translateY(-1px); }
+.entry:first-child .ink-ico { color:var(--violet-2); }
+.entry:nth-child(2) .ink-ico { color:var(--cyan); }
+.entry-key { border-color:var(--line); color:var(--cyan); background:rgba(95,158,172,.08); }
+
+.job-list { border-color:var(--line-strong); }
+.job-list li,.stopped-controls li,.brk-steps li { border-color:var(--line); }
+.job-tile { transition:background .18s,padding .18s; border-radius:.55rem; }
+.job-tile:hover:not(:disabled) { background:rgba(95,158,172,.07); padding-left:.65rem; padding-right:.65rem; }
+.job-tile-n,.figure-n,.verdict-left { color:var(--cyan); }
+
+.ink-btn {
+  border:1px solid rgba(95,127,114,.3); border-radius:.65rem;
+  background:linear-gradient(110deg,rgba(255,255,255,.72),rgba(111,169,184,.10));
+  box-shadow:0 10px 28px rgba(72,88,78,.1); transition:transform .18s,filter .18s;
+}
+.ink-btn:hover:not(:disabled) { transform:translateY(-1px); filter:brightness(1.12); }
+.ink-btn:active { translate:0 1px; box-shadow:none; }
+.ink-btn[aria-pressed="true"],.ink-btn.is-ink {
+  color:#fff; border-color:transparent;
+  background:linear-gradient(110deg,var(--violet),#729486 55%,var(--cyan));
+}
+
+.ink-rail { margin-top:.9rem; border-radius:.8rem; }
+.ink-rail .keys b {
+  border-color:var(--line-strong); border-radius:.32rem; box-shadow:none;
+  background:var(--paper-3); color:var(--cyan);
+}
+.ink-search { border-color:var(--line-strong); }
+.ink-caret { background:var(--cyan); box-shadow:0 0 10px var(--cyan); }
+
+.cmp,.cmp-side,.draft,.did-spot,.figure { border-color:var(--line-strong); }
+.cmp-side.is-record { border-color:var(--cyan); }
+.callout { border-color:var(--line); background:rgba(95,158,172,.07); }
+.brk-field textarea { border-color:var(--line-strong); border-radius:.65rem; background:rgba(255,255,255,.64); }
+.brk-step-n { border-color:var(--line-strong); border-radius:.35rem; }
+.brk-steps li.is-stop .brk-step-n { color:#fff; background:linear-gradient(145deg,var(--seal),#9f514d); }
+.scan-read { background:rgba(55,78,68,.9); color:white; backdrop-filter:blur(12px); }
+.scan-bands { mix-blend-mode:screen; opacity:.25; }
+.detail { border-color:var(--line-strong); background:var(--paper-2); }
+.detail-backdrop { background:rgba(46,62,55,.34); backdrop-filter:blur(8px); }
+
+@media (max-width:34rem) {
+  .today-entries .entry { border-color:var(--line); }
+  .today-entries { border-radius:.8rem; }
 }

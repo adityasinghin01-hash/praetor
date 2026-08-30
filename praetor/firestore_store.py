@@ -84,6 +84,30 @@ def add_user(db, user_id: str, name: str | None = None) -> None:
         {"id": uid, "name": name, "created_at": now()}, merge=True)
 
 
+def register_viewer(db, user_id: str, name: str, password_hash: str,
+                    tenant_id: str) -> bool:
+    """Atomically create a viewer account without overwriting an existing identity."""
+    uid = user_id.strip().lower()
+    user_ref = db.collection(USERS).document(uid)
+    member_ref = db.collection(MEMBERS).document(f"{uid}:{tenant_id}")
+    transaction = db.transaction()
+
+    @firestore.transactional
+    def create(tx):
+        if user_ref.get(transaction=tx).exists:
+            return False
+        tx.set(user_ref, {
+            "id": uid, "name": name, "password_hash": password_hash,
+            "created_at": now(),
+        })
+        tx.set(member_ref, {
+            "user_id": uid, "tenant_id": tenant_id, "role": "viewer",
+        })
+        return True
+
+    return bool(create(transaction))
+
+
 def grant(db, user_id: str, tenant_id: str, role: str) -> None:
     if role not in ROLES:
         raise ValueError(f"unknown role {role!r}; expected one of {ROLES}")
