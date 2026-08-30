@@ -142,10 +142,11 @@ button:focus-visible {{ outline:3px solid var(--seal); outline-offset:3px; }}
 are, so identity is proven here rather than asserted.</p>
 <form method="POST" action="/login">
   <label for="email">email</label>
-  <input id="email" name="email" autocomplete="username" autofocus value="{email}">
+  <input id="email" name="email" autocomplete="username" value="{email}"{emailfocus}>
   <label for="password">password</label>
-  <input id="password" name="password" type="password" autocomplete="current-password">
-  <button type="submit">Sign in</button>
+  <input id="password" name="password" type="password" autocomplete="current-password"
+         value="{password}">
+  <button type="submit"{focus}>Sign in</button>
 </form>
 {error}
 {seed}
@@ -165,6 +166,27 @@ SEED_BLOCK = """<div class="seed">
   <code>reviewer@acme-industries.test</code> &middot; approver<br>
   <code>auditor@acme-industries.test</code> &middot; viewer, cannot approve
 </div>"""
+
+
+def prefill(email: str = "") -> dict:
+    """What the sign-in form arrives holding.
+
+    Off a deployed URL the fields are filled and the caret sits on the button, so signing
+    in is one keypress. That is the same trade DECISIONS #11 already made for the seed
+    block, and it is gated the same way: a credential typed into the page next to the
+    form it opens is fine on your own machine and indefensible on a public URL, however
+    synthetic the invoices behind it are.
+
+    A failed attempt keeps whatever was typed. Overwriting somebody's own email with the
+    demo one, mid-correction, would be its own small cruelty.
+    """
+    if deployed() or email:
+        return {"email": email, "password": "",
+                "emailfocus": " autofocus", "focus": ""}
+    from eval.build_db import DEMO_PASSWORD
+
+    return {"email": "reviewer@acme-industries.test", "password": DEMO_PASSWORD,
+            "emailfocus": "", "focus": " autofocus"}
 
 
 def deployed() -> bool:
@@ -268,9 +290,13 @@ class Handler(BaseHTTPRequestHandler):
         if not deployed():
             from eval.build_db import DEMO_PASSWORD
             seed = SEED_BLOCK.format(pw=html.escape(DEMO_PASSWORD))
+        filled = prefill(email)
         body = LOGIN_PAGE.format(
             error=f'<div class="err">{html.escape(error)}</div>' if error else "",
-            email=html.escape(email), seed=seed, fonts="")
+            email=html.escape(filled["email"]),
+            password=html.escape(filled["password"]),
+            emailfocus=filled["emailfocus"], focus=filled["focus"],
+            seed=seed, fonts="")
         self._send(code, body.encode(), "text/html; charset=utf-8")
 
     def _body(self) -> dict:

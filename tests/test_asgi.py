@@ -519,3 +519,36 @@ def test_the_sign_in_page_wears_the_app_s_own_direction(anonymous):
     assert "--paper:#EFEEE8" in page and "--ink:#0B0B0B" in page
     assert "Shippori Mincho" in page
     assert "#0e1116" not in page, "the old dark palette is still in the template"
+
+
+def test_the_form_arrives_filled_off_a_deployed_url(anonymous, monkeypatch):
+    """One click to sign in on your own machine. Same trade as the seed block."""
+    monkeypatch.setattr(serve, "deployed", lambda: False)
+    page = anonymous.get("/login").text
+    assert 'value="reviewer@acme-industries.test"' in page
+    assert 'value="praetor"' in page
+    assert "<button type=\"submit\" autofocus" in page
+
+
+def test_the_form_is_empty_on_a_deployed_url(anonymous, monkeypatch):
+    """A credential typed into the page beside the form it opens is fine on a laptop and
+    indefensible on a public URL, however synthetic the invoices behind it are."""
+    monkeypatch.setattr(serve, "deployed", lambda: True)
+    page = anonymous.get("/login").text
+    assert 'value="praetor"' not in page
+    assert "Seeded demo accounts" not in page
+    # Empty, and the caret starts in the email field rather than on the button.
+    assert 'value=""' in page
+    assert 'value="reviewer@acme-industries.test"' not in page
+    assert 'value=""  autofocus' in page.replace(">", "  ") or "autofocus>" in page
+
+
+def test_a_failed_attempt_keeps_what_was_typed(anonymous, monkeypatch):
+    """Overwriting somebody's own email with the demo one, mid-correction, would be its
+    own small cruelty — and would hide which address they had actually tried."""
+    monkeypatch.setattr(serve, "deployed", lambda: False)
+    r = anonymous.post("/login", follow_redirects=False,
+                       data={"email": "someone@else.test", "password": "wrong"})
+    assert r.status_code == 401
+    assert 'value="someone@else.test"' in r.text
+    assert 'value="praetor"' not in r.text

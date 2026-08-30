@@ -400,9 +400,13 @@ def _login_html(error: str = "", email: str = "") -> str:
     if not serve.deployed():
         from eval.build_db import DEMO_PASSWORD
         seed = serve.SEED_BLOCK.format(pw=_html.escape(DEMO_PASSWORD))
+    filled = serve.prefill(email)
     return serve.LOGIN_PAGE.format(
         error=f'<div class="err">{_html.escape(error)}</div>' if error else "",
-        email=_html.escape(email), seed=seed, fonts=_built_stylesheet())
+        email=_html.escape(filled["email"]),
+        password=_html.escape(filled["password"]),
+        emailfocus=filled["emailfocus"], focus=filled["focus"],
+        seed=seed, fonts=_built_stylesheet())
 
 
 def _built_stylesheet() -> str:

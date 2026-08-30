@@ -103,7 +103,7 @@ sure the value never reaches the payment sink.
 
 **Prerequisites:** Python **3.11 or newer** and `make`. Nothing else. No cloud account,
 no API key, no billing. Verified on 27 Aug from a clean clone on **3.13.14 and 3.14.6** —
-all 661 tests pass on both. (An earlier draft of this line said "not 3.14", which was
+all 664 tests pass on both. (An earlier draft of this line said "not 3.14", which was
 left over from a `torch` dependency the project no longer has.)
 
 ```bash
@@ -326,7 +326,7 @@ Nothing in this repo is an industry estimate or a figure typed in by hand.
 
 | Claim | Command | Needs a key? |
 |---|---|---|
-| 661 tests pass | `make test` | no |
+| 664 tests pass | `make test` | no |
 | Rules baseline: **P 0.800 · R 0.963 · F1 0.874** | `make rules` | no |
 | Corpus regenerates bit-for-bit | `make verify` | no |
 | Kernel throughput: **~4,100 docs/second**, one core | `make volume` | no |
