@@ -27,8 +27,15 @@ jobs:
       # The corpus is committed, but the artifacts derived from it are not (`out/` is
       # gitignored). Build them here, so the tests that read them actually run instead
       # of skipping — a suite that silently skips its newest tests is worse than no CI.
-      - name: build the derived artifacts
-        run: make rules db web
+      - name: build the data artifacts
+        run: make rules db
+
+      - name: build the frontend bundle
+        working-directory: web
+        run: |
+          npm ci --no-audit --no-fund
+          ./node_modules/.bin/tsc -b
+          ./node_modules/.bin/vite build --sourcemap false
 
       - name: the full suite
         run: make test
