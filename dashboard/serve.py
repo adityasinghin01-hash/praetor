@@ -327,6 +327,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, api.queue(self._rows(conn, tenant)))
         if path == "/v1/stopped":
             return self._json(200, api.stopped(self._rows(conn, tenant)))
+        if path == "/v1/cleared":
+            return self._json(200, api.cleared(self._rows(conn, tenant)))
         if path == "/v1/notes":
             doc_id = (q.get("doc_id") or [""])[0]
             return self._json(200, {"notes": store.notes_for(conn, tenant, doc_id)})

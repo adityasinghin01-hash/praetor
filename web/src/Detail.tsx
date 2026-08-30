@@ -24,6 +24,25 @@ export function Detail({ row, onClose, onChanged }: Props) {
   const [draft, setDraft] = useState("");
   const [saying, setSaying] = useState<string | null>(null);
 
+  // `1` `2` `3` file a canned note while the invoice is open. The same three keys mean
+  // something different on the screen behind, which is safe because only one of the two
+  // is ever reachable: the screens disable their handler while this dialog is up.
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return;
+      const at = ["1", "2", "3"].indexOf(event.key);
+      if (at < 0) return;
+      const note = row.canned_notes[at];
+      if (!note) return;
+      event.preventDefault();
+      void save(note);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
   useEffect(() => {
     openedBy.current = document.activeElement;
     dialogRef.current?.focus();
@@ -163,12 +182,28 @@ export function Detail({ row, onClose, onChanged }: Props) {
           </ul>
         )}
 
+        {/* Problem 10: three things she writes again and again. Typing them out forty
+            times a night is the tax; here each one is a single key. The wording comes
+            from `dashboard/language.py` with everything else a person reads. */}
+        {row.canned_notes.length > 0 && (
+          <div className="canned">
+            <p className="canned-label">Or file one of these</p>
+            <ul>
+              {row.canned_notes.map((note, i) => (
+                <li key={note}>
+                  <button className="btn canned-btn" onClick={() => void save(note)}>
+                    <kbd>{i + 1}</kbd>
+                    <span>{note}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         <div className="actions">
           <button className="btn primary" onClick={() => void save(draft)}>
             Save what you found
-          </button>
-          <button className="btn" onClick={() => void save("I called them.")}>
-            I called them
           </button>
           <button className="btn" onClick={onClose}>
             Close

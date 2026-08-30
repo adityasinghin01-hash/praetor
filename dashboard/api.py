@@ -72,6 +72,149 @@ def _amount(row: dict) -> float:
         return 0.0
 
 
+@lru_cache(maxsize=256)
+def _vendor_history(doc_id: str) -> tuple[dict, ...]:
+    """This supplier's own past invoices, excluding the one being looked at.
+
+    The vendor master is a list of records, each carrying its `doc_id` — which is what
+    makes "show me the original" answerable rather than a shrug. `_pattern_for` reduces
+    the same data to modes and percentiles; this keeps the rows.
+    """
+    vm_path = ROOT / "out" / "vm_constructed.json"
+    ann_path = ROOT / "data" / "constructed" / f"{doc_id}.json"
+    if not vm_path.exists() or not ann_path.exists():
+        return ()
+    ann = json.loads(ann_path.read_text())
+    vendor = next((f["text"] for f in ann["field_extractions"]
+                   if f["fieldtype"] == "vendor_name"), "").lower()
+    vm = json.loads(vm_path.read_text())
+    return tuple(r for r in vm.get(vendor, []) if r.get("doc_id") != doc_id)
+
+
+#: How a comparison is *shown*, which is not the same as what the rule was called.
+#: The screen picks a layout from this; the machine's finding code never reaches it,
+#: for the same reason no other raw code does. tests/test_api.py enforces that.
+EVIDENCE_KIND = {
+    "BANK_UNKNOWN": "account",
+    "DUPLICATE_INVOICE": "duplicate",
+    "CURRENCY_MISMATCH": "currency",
+    "TAX_RATE_MISMATCH": "rate",
+    "ADDRESS_MISMATCH": "address",
+    "AMOUNT_OUT_OF_RANGE": "amount",
+    "MISSING_FIELD": "missing",
+}
+
+
+def _comparison(code: str, field: str, on_invoice, in_records, note=None,
+                seen_before: int | None = None) -> dict:
+    """One finding, as the two sides a person actually needs to compare.
+
+    Values and counts only. Every sentence in `note` comes from `language.py`, because
+    there is one place to audit the words a person reads and it is not this file.
+    """
+    return {
+        "kind": EVIDENCE_KIND.get(code, "other"),
+        "field": language.field_label(field),
+        "on_invoice": None if on_invoice is None else str(on_invoice),
+        "in_records": [str(v) for v in (in_records or [])],
+        "note": note,
+        "seen_before": seen_before,
+    }
+
+
+def _evidence_for(doc_id: str, codes: list[str]) -> list[dict]:
+    """What the invoice says, beside what the buyer's own records say.
+
+    This is the half of Priya's job the app used to describe instead of doing. The queue
+    row already said *what* was wrong; without the comparison she still had to go and
+    look up the answer the system was holding the whole time.
+
+    A code with nothing to compare gets no entry rather than an empty one — an unpopulated
+    side-by-side is worse than no side-by-side, because it reads as "we checked and found
+    nothing" when the truth is "we cannot answer this here".
+    """
+    pattern = _pattern_for(doc_id)
+    if pattern is None:
+        return []
+
+    history = _vendor_history(doc_id)
+    seen = pattern.n_invoices
+    out: list[dict] = []
+
+    for code in codes:
+        if code == "BANK_UNKNOWN":
+            out.append(_comparison(
+                code, "payment_iban", _field(doc_id, "bank_account"),
+                sorted(pattern.bank_accounts),
+                language.evidence_note(code, seen), seen))
+
+        elif code == "DUPLICATE_INVOICE":
+            number = _field(doc_id, "invoice_number")
+            original = next((r for r in history if r.get("invoice_number") == number), None)
+            out.append(_comparison(
+                code, "invoice_id", number,
+                [original["doc_id"]] if original else [],
+                language.evidence_note(code, seen,
+                                       amount=(original or {}).get("amount_total"))))
+
+        elif code == "CURRENCY_MISMATCH":
+            out.append(_comparison(
+                code, "currency_code_amount_due", _field(doc_id, "currency"),
+                [pattern.modal_currency] if pattern.modal_currency else [],
+                language.evidence_note(code, seen), seen))
+
+        elif code == "TAX_RATE_MISMATCH":
+            out.append(_comparison(
+                code, "tax_detail_rate", _field(doc_id, "tax_rate"),
+                [pattern.modal_tax_rate] if pattern.modal_tax_rate else [],
+                language.evidence_note(code, seen), seen))
+
+        elif code == "ADDRESS_MISMATCH":
+            out.append(_comparison(
+                code, "vendor_address", _field(doc_id, "vendor_address"),
+                [pattern.modal_address] if pattern.modal_address else [],
+                language.evidence_note(code, seen), seen))
+
+        elif code == "AMOUNT_OUT_OF_RANGE":
+            usual = ([f"{pattern.amount_p05:,.2f} - {pattern.amount_p95:,.2f}"]
+                     if pattern.amount_p05 is not None and pattern.amount_p95 is not None
+                     else [])
+            out.append(_comparison(
+                code, "amount_total", _field(doc_id, "amount_total"), usual,
+                language.evidence_note(code, seen), seen))
+
+        elif code == "MISSING_FIELD":
+            # Which field is missing is not on the code, so it is recovered the same
+            # way the rule found it: a field this supplier almost always fills in, that
+            # this invoice does not carry.
+            absent: list[str] = []
+            for name, share in sorted(pattern.field_presence.items()):
+                if share >= 0.9 and not _field(doc_id, name):
+                    absent.append(name)
+            for name in absent:
+                out.append(_comparison(
+                    code, name, None, [],
+                    language.evidence_note(code, seen,
+                                           share=pattern.field_presence.get(name))))
+
+    return out
+
+
+def _draft_for(doc_id: str, codes: list[str], supplier: str) -> dict | None:
+    """The drafted email for whichever finding on this row can be written about."""
+    pattern = _pattern_for(doc_id)
+    for code in codes:
+        if code == "MISSING_FIELD" and pattern is not None:
+            for name, share in sorted(pattern.field_presence.items()):
+                if share >= 0.9 and not _field(doc_id, name):
+                    return language.draft_email(code, supplier, language.field_label(name))
+            continue
+        drafted = language.draft_email(code, supplier)
+        if drafted:
+            return drafted
+    return None
+
+
 def _explain_row(row: dict) -> dict:
     """One queue row, in Priya's words, with what to do and who to call."""
     codes = row.get("codes") or [f.get("code") for f in row.get("findings", [])]
@@ -104,11 +247,20 @@ def _explain_row(row: dict) -> dict:
         "call": (contact.as_dict() | {"warning": "This is the number in your own "
                                                  "records, not the one on the invoice."}
                  if contact else
-                 {"phone": None, "warning": "No number on file. Find one through your "
-                                            "own systems — do not use a number printed "
-                                            "on this invoice."}),
+                 {"phone": None, "email": None,
+                  "warning": "No number on file. Find one through your "
+                             "own systems — do not use a number printed "
+                             "on this invoice."}),
+        # Problems 6 and 11: the email she would otherwise write by hand. Composed by
+        # language.py like every other sentence; the screen only opens it.
+        "draft": _draft_for(row["doc_id"], codes, (row.get("vendor") or "").title()),
+        # The canned notes, so filing one is a keypress rather than typing.
+        "canned_notes": list(language.CANNED_NOTES),
         "decided_by": row.get("approved_by"),
         "decided_at": row.get("approved_at"),
+        # The comparison she would otherwise go and look up by hand. Screens 03 and 04
+        # are built on this; the queue row above only ever said *what* was wrong.
+        "evidence": _evidence_for(row["doc_id"], codes),
     }
 
 
@@ -190,6 +342,59 @@ def stopped(rows: list[dict]) -> dict:
             for r in rows if r.get("approved_by") or r.get("overridden")
         ],
         "attacks": attack_log.summary(),
+    }
+
+
+# ------------------------------------------------------------------ what it cleared
+
+def cleared(rows: list[dict], sample: int = 12) -> dict:
+    """Screen 05. The invoices that never reached her, and one to check.
+
+    `queue` returns what is waiting and `stopped` returns what was decided, so the
+    largest group — everything that went through on its own — was the one thing no
+    endpoint could show. Work she did not have to do is invisible by construction, and
+    invisible work is work nobody credits her for.
+
+    **Two numbers, and they count different things.** `cleared` is everything that never
+    reached a person, which is the same arithmetic the queue headline uses and the same
+    figure FINDINGS reports as autonomy. `judged` is the subset the system actually had
+    to think about: an exception was raised, it was adjudicated, and it came back fine.
+    The rest raised nothing at all.
+
+    The spot check is drawn from `judged` rather than from everything, because "show me
+    one you let through" is a question about the decisions that could have gone the other
+    way. Offering an invoice that never tripped a single rule would answer a question
+    nobody asked. They are ranked by amount: being wrong is most expensive there, so
+    those are the honest ones to hand over.
+    """
+    waiting = [r for r in rows if build.outcome_of(r) in ("escalated", "override")]
+    judged = [r for r in rows if build.outcome_of(r) == "cleared"]
+    total = _total_documents()
+    never_reached = max(total - len(waiting), 0)
+    ranked = sorted(judged, key=_amount, reverse=True)[:sample]
+
+    return {
+        "cleared": never_reached,
+        "total": total,
+        "judged": len(judged),
+        "headline": (f"{never_reached} invoices were paid without you having to look."
+                     if never_reached else "Nothing has been cleared yet."),
+        "judged_note": (f"{len(judged)} of those raised something the system had to weigh "
+                        f"up before letting them through. The rest raised nothing at all."),
+        "spot_check_note": ("Open any of them. Every invoice it cleared is still here, "
+                            "with what it decided and why."),
+        "sample": [
+            {"id": r["doc_id"],
+             "supplier": (r.get("vendor") or "?").title(),
+             "amount": ((r.get("evidence", {}).get("amount_total", {}) or {}).get("value")
+                        or _field(r["doc_id"], "amount_total")),
+             "currency": ((r.get("evidence", {}).get("currency", {}) or {}).get("value")
+                          or _field(r["doc_id"], "currency")),
+             "system_said": language.outcome_sentence(
+                 r.get("decision", ""), bool(r.get("overridden")),
+                 r.get("override_reason"))}
+            for r in ranked
+        ],
     }
 
 

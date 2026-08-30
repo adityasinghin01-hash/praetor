@@ -168,3 +168,41 @@ def test_a_document_with_no_account_trusts_nothing(conn):
     store.record_approval(conn, TENANT, "INV_002", "reviewer@acme.test", ["MISSING_FIELD"])
 
     assert store.trusted_accounts(conn, TENANT, VENDOR) == set()
+
+
+# ------------------------------------------------------- rejection establishes nothing
+
+def test_rejecting_never_establishes_trust(conn):
+    """The asymmetry the whole feature rests on.
+
+    Key `2` on screen 04 is Fraud. It writes to the same table as an approval and inherits
+    the same duplicate guard, which is why it reuses `action` rather than getting a table
+    of its own -- but routing it through `_establish_trust` would mark the attacker's
+    account as known-good on the strength of a person saying it was fraudulent. That is
+    the precise inversion this test exists to prevent.
+    """
+    _arrive(conn, "INV_001", ATTACKER_ACCOUNT)
+
+    store.record_decision(conn, TENANT, "INV_001", "reviewer@acme.test",
+                          ["BANK_UNKNOWN"], "rejected")
+
+    assert store.trusted_accounts(conn, TENANT, VENDOR) == set(), (
+        "a rejection must never vouch for the account it rejected")
+    assert store.trust_log(conn, TENANT) == []
+
+
+def test_a_rejected_invoice_cannot_then_be_approved(conn):
+    """Deciding is once. Flagging fraud must not leave the door open to paying it."""
+    _arrive(conn, "INV_001", ATTACKER_ACCOUNT)
+    store.record_decision(conn, TENANT, "INV_001", "reviewer@acme.test", [], "rejected")
+
+    with pytest.raises(store.AlreadyApproved):
+        store.record_approval(conn, TENANT, "INV_001", "reviewer@acme.test", [])
+
+    assert store.trusted_accounts(conn, TENANT, VENDOR) == set()
+
+
+def test_a_decision_must_be_one_of_the_two(conn):
+    _arrive(conn, "INV_001", REAL_ACCOUNT)
+    with pytest.raises(ValueError):
+        store.record_decision(conn, TENANT, "INV_001", "reviewer@acme.test", [], "paid")

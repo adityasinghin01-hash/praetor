@@ -50,7 +50,8 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import (HTMLResponse, JSONResponse, RedirectResponse,
+                               Response, StreamingResponse)
 
 ROOT = Path(__file__).resolve().parents[1]
 # So `python dashboard/asgi.py` works as well as `PYTHONPATH=. python -m ...`. The
@@ -60,7 +61,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from dashboard import api, ratelimit, serve  # noqa: E402
-from praetor import store  # noqa: E402
+from praetor import auth, gate, store  # noqa: E402
 
 # One page of a queue. Small enough that a phone renders it quickly, large enough that a
 # day's exceptions are a few pages rather than forty.
@@ -184,6 +185,13 @@ async def stopped(who=Depends(session)) -> dict:
     return api.stopped(_rows(tenant))
 
 
+@app.get("/v1/cleared")
+async def cleared(who=Depends(session)) -> dict:
+    """What the system handled without her. See dashboard/api.py:cleared."""
+    _, tenant = who
+    return api.cleared(_rows(tenant))
+
+
 @app.get("/v1/notes")
 async def notes(doc_id: str = Query(""), who=Depends(session)) -> dict:
     _, tenant = who
@@ -199,6 +207,59 @@ async def add_note(request: Request, who=Depends(session)) -> dict:
         # self-declared identity is not an identity. DECISIONS #11.
         return store.add_note(_conn(), tenant, str(body.get("doc_id", "")), user,
                               str(body.get("body", "")), str(body.get("kind", "note")))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+
+@app.post("/v1/decisions")
+async def decide(request: Request, who=Depends(session)) -> dict:
+    """Record what a person decided about an invoice they were handed.
+
+    This is the endpoint every screen that "ends in an action" needs, and it is a thin
+    wrapper on purpose: the rules it enforces already live in `praetor/store.py` and are
+    tested there. Approving twice is a double payment; approving something nobody
+    escalated is a decision manufactured for a document no person ever saw. Both are
+    refused below by the store, not by this function.
+
+    The decider is the session, never the body — a self-declared identity is not an
+    identity. Same rule as `add_note`. DECISIONS #11.
+    """
+    user, tenant = who
+    body = await request.json()
+    doc_id = str(body.get("doc_id", ""))
+    action = str(body.get("action", "approved"))
+    codes = body.get("codes") or []
+    if not isinstance(codes, list):
+        raise HTTPException(status_code=422, detail="codes must be a list")
+
+    conn = _conn()
+
+    # The architectural invariant, and the authorisation, in the order `serve.py` runs
+    # them. This endpoint had neither: it went straight to the store, so a `viewer`
+    # could approve a payment and an agent identifier would have been accepted as a
+    # person. Being signed in is necessary and not sufficient — the whole claim this
+    # system makes about approvals is that they record *who*, and that only somebody
+    # holding `approver` on this client's books can make one.
+    try:
+        gate.approve(gate.GateDecision(doc_id=doc_id, action=gate.Action.ESCALATE,
+                                       findings=()), user)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+
+    role = serve.db().role_of(conn, user, tenant)
+    if role != "approver":
+        raise HTTPException(
+            status_code=403,
+            detail=f"{user} does not hold 'approver' on {tenant} (role: {role or 'none'})")
+
+    try:
+        return store.record_decision(conn, tenant, doc_id, user, codes, action)
+    except store.AlreadyApproved as e:
+        # 409, not 400: the request was well formed and the state is the problem. The
+        # screen shows this as "somebody already decided this" rather than as an error.
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except store.NotEscalated as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 
@@ -312,6 +373,76 @@ async def upload(file: UploadFile = File(...), who=Depends(session)) -> dict:
             "spans": outcome.spans, "error": outcome.error}
 
 
+# ------------------------------------------------------------------- signing in
+
+def _login_html(error: str = "", email: str = "") -> str:
+    """The same page `dashboard/serve.py` serves, rendered from the same template.
+
+    Not a second login screen. Two sign-in pages is two places for a security rule to
+    drift, and the rule here — that identity is proven rather than asserted, because
+    approving a payment records who you are — is the one that must not.
+    """
+    import html as _html
+
+    seed = ""
+    if not serve.deployed():
+        from eval.build_db import DEMO_PASSWORD
+        seed = serve.SEED_BLOCK.format(pw=_html.escape(DEMO_PASSWORD))
+    return serve.LOGIN_PAGE.format(
+        error=f'<div class="err">{_html.escape(error)}</div>' if error else "",
+        email=_html.escape(email), seed=seed)
+
+
+@app.get("/login")
+async def login_page() -> HTMLResponse:
+    """The React app is served by *this* transport, and it had no way to sign in.
+
+    `serve.py` has had the whole flow all along — form, handler, logout — so anyone
+    reaching the app through FastAPI got a 401 on every screen and no route out. The
+    only way in was to mint a session by hand in a Python shell.
+    """
+    return HTMLResponse(_login_html())
+
+
+@app.post("/login")
+async def login(request: Request) -> Response:
+    form = await request.form()
+    email = str(form.get("email", "")).strip()
+
+    # The same limiter the other transport uses, so a password cannot be guessed faster
+    # by choosing a different door into the same database.
+    key = ratelimit.caller_key(
+        request.headers, (request.client.host if request.client else "", 0))
+    allowed, _retry = serve.LOGIN_LIMIT.check(key)
+    if not allowed:
+        return HTMLResponse(_login_html("Too many attempts. Wait a minute.", email),
+                            status_code=429)
+
+    conn = _conn()
+    user = auth.authenticate(conn, email, str(form.get("password", "")))
+    if not user:
+        return HTMLResponse(
+            _login_html("That email and password do not match.", email), status_code=401)
+
+    token = auth.start_session(conn, user)
+    response = RedirectResponse("/", status_code=303)
+    # TLS terminates in front of the container on Cloud Run, so the request arrives over
+    # http with the original scheme in a header. Marking the cookie Secure on a plain
+    # local connection would stop it being sent back at all.
+    https = request.headers.get("x-forwarded-proto", "").lower() == "https"
+    response.set_cookie(serve.COOKIE, token, httponly=True, samesite="strict",
+                        secure=https, path="/")
+    return response
+
+
+@app.get("/logout")
+async def logout(request: Request) -> Response:
+    auth.end_session(_conn(), request.cookies.get(serve.COOKIE))
+    response = RedirectResponse("/login", status_code=303)
+    response.delete_cookie(serve.COOKIE, path="/")
+    return response
+
+
 # ----------------------------------------------------------------------- health
 
 @app.get("/v1/health")
@@ -381,5 +512,9 @@ def run(host: str = "127.0.0.1", port: int = 8000, **kwargs) -> None:
 if __name__ == "__main__":
     import os
 
-    run(host=os.environ.get("PRAETOR_HOST", "127.0.0.1"),
+    # Cloud Run sets $PORT and expects 0.0.0.0; locally, stay on the loopback. The same
+    # rule `serve.py` has always used — without it this transport binds 127.0.0.1 inside
+    # the container and the service is unreachable however healthy the process looks.
+    run(host=os.environ.get("PRAETOR_HOST",
+                            "0.0.0.0" if os.environ.get("PORT") else "127.0.0.1"),
         port=int(os.environ.get("PORT", "8000")))

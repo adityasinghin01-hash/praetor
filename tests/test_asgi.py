@@ -60,7 +60,11 @@ def client(monkeypatch):
     transport. `tests/test_web_security.py` and `tests/test_auth.py` own the question of
     who gets a session in the first place.
     """
-    asgi.app.dependency_overrides[asgi.session] = lambda: ("priya", TENANT)
+    # A real member of this tenant, holding `approver`. "priya" held no membership, so
+    # every test that posted a decision was being refused for the wrong reason once the
+    # authorisation check existed — and had been passing for the wrong reason before it.
+    asgi.app.dependency_overrides[asgi.session] = \
+        lambda: ("reviewer@acme-industries.test", TENANT)
     monkeypatch.setattr(serve.READ_LIMIT, "limit", 10_000)
     monkeypatch.setattr(serve.RUN_LIMIT, "limit", 10_000)
     with TestClient(asgi.app) as c:
@@ -382,3 +386,108 @@ def test_the_static_route_cannot_walk_out_of_the_build_directory(anonymous):
         r = anonymous.get(f"/{attempt}")
         # Either the app shell or a refusal -- never a file from outside web/dist.
         assert "google-genai" not in r.text and "root:" not in r.text, attempt
+
+
+# ------------------------------------------------------------- decisions
+
+def test_deciding_needs_a_session(anonymous):
+    """Who decided is the whole value of the record. Anonymous cannot decide."""
+    r = anonymous.post("/v1/decisions", json={"doc_id": "anything", "action": "approved"})
+    assert r.status_code == 401
+
+
+def test_deciding_a_document_nobody_escalated_is_refused(client):
+    """422, and the store is what refuses it -- see tests/test_store.py.
+
+    A decision manufactured for a document no person was ever handed is the failure this
+    guards, so the endpoint must surface the refusal rather than swallow it.
+    """
+    r = client.post("/v1/decisions",
+                    json={"doc_id": "no-such-document", "action": "approved"})
+    assert r.status_code == 422
+    assert "escalated" in r.json()["detail"]
+
+
+def test_an_invented_decision_is_refused(client):
+    r = client.post("/v1/decisions", json={"doc_id": "whatever", "action": "paid"})
+    assert r.status_code == 422
+
+
+def test_codes_must_be_a_list(client):
+    r = client.post("/v1/decisions",
+                    json={"doc_id": "whatever", "action": "approved", "codes": "BANK"})
+    assert r.status_code == 422
+
+
+# ------------------------------------------------------------------- signing in
+
+def test_the_transport_that_serves_the_app_can_be_signed_into(anonymous):
+    """`serve.py` had the whole login flow and this transport had none of it.
+
+    Since FastAPI is what serves the React app, that meant a person opening it got a 401
+    on every screen and no route out — the only way in was to mint a session by hand.
+    """
+    page = anonymous.get("/login")
+    assert page.status_code == 200
+    assert '<form method="POST" action="/login">' in page.text
+
+
+def test_signing_in_sets_a_session_and_lands_on_the_app(anonymous):
+    from eval.build_db import DEMO_PASSWORD
+
+    r = anonymous.post("/login", follow_redirects=False,
+                       data={"email": "reviewer@acme-industries.test",
+                             "password": DEMO_PASSWORD})
+    assert r.status_code == 303
+    assert r.headers["location"] == "/"
+    cookie = r.headers.get("set-cookie", "")
+    assert serve.COOKIE in cookie
+    # The session cookie must not be readable by script, whichever door it came through.
+    assert "httponly" in cookie.lower()
+    assert "samesite=strict" in cookie.lower()
+
+
+def test_a_wrong_password_says_so_without_saying_which_half_was_wrong(anonymous):
+    r = anonymous.post("/login", follow_redirects=False,
+                       data={"email": "reviewer@acme-industries.test", "password": "nope"})
+    assert r.status_code == 401
+    assert "do not match" in r.text
+    # Naming which field was wrong tells an attacker which addresses are real.
+    assert "no such user" not in r.text.lower()
+
+
+def test_signing_out_clears_the_session(anonymous):
+    r = anonymous.get("/logout", follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers["location"] == "/login"
+
+
+# ------------------------------------------------------- who may decide
+
+def test_a_viewer_cannot_approve_a_payment(client, monkeypatch):
+    """Being signed in is necessary and not sufficient.
+
+    `serve.py` has always run five checks before an approval is written; this endpoint
+    was added with only the last two, so a `viewer` could approve — and did, in testing.
+    The whole claim this system makes about approvals is that they record who, and that
+    only somebody holding `approver` on this client's books can make one.
+    """
+    asgi.app.dependency_overrides[asgi.session] = \
+        lambda: ("auditor@acme-industries.test", TENANT)
+    r = client.post("/v1/decisions",
+                    json={"doc_id": "V000_004", "action": "approved", "codes": []})
+    assert r.status_code == 403
+    assert "approver" in r.json()["detail"]
+
+
+def test_an_agent_cannot_approve_a_payment(client):
+    """`gate.approve()` is the only route to APPROVED and it needs a person.
+
+    An agent has no human identifier, which is what makes the boundary enforceable
+    rather than advisory. The endpoint must run that check, not assume it happened.
+    """
+    asgi.app.dependency_overrides[asgi.session] = lambda: ("agent:reader", TENANT)
+    r = client.post("/v1/decisions",
+                    json={"doc_id": "V000_004", "action": "approved", "codes": []})
+    assert r.status_code == 403
+    assert "agents cannot approve" in r.json()["detail"]

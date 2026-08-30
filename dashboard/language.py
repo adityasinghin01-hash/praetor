@@ -216,6 +216,95 @@ def explain(code: str) -> Explanation:
     return EXPLANATIONS.get(code, UNKNOWN)
 
 
+# ----------------------------------------------------------------------- the evidence
+
+def evidence_note(code: str, seen: int, *, amount: str | None = None,
+                  share: float | None = None) -> str | None:
+    """The one line under a side-by-side comparison.
+
+    Written to be exactly as strong as the data. The vendor master holds the *mode* of a
+    supplier's past invoices, not a universal, so these say "usual" rather than "always" —
+    a sentence that overstates what we checked is worse than no sentence, because the
+    person acts on it.
+    """
+    if code == "BANK_UNKNOWN":
+        if seen <= 0:
+            return "You have no earlier invoices from this supplier to compare against."
+        invoices = "invoice" if seen == 1 else "invoices"
+        return (f"You have {seen} earlier {invoices} from this supplier, "
+                f"and none of them used this account.")
+
+    if code == "DUPLICATE_INVOICE":
+        if amount:
+            return f"The invoice on the right is already in your records, for {amount}."
+        return "This invoice number is already in your records."
+
+    if code == "CURRENCY_MISMATCH":
+        return f"Their usual currency across {seen} earlier invoices."
+
+    if code == "TAX_RATE_MISMATCH":
+        return f"Their usual rate across {seen} earlier invoices."
+
+    if code == "ADDRESS_MISMATCH":
+        return f"The address on their earlier invoices, {seen} of them."
+
+    if code == "AMOUNT_OUT_OF_RANGE":
+        return f"What this supplier usually charges, across {seen} earlier invoices."
+
+    if code == "MISSING_FIELD":
+        if share is None:
+            return "This supplier normally fills this in."
+        return f"This supplier fills this in on {share * 100:.0f}% of their invoices."
+
+    return None
+
+
+# ------------------------------------------------------------------- writing to them
+
+#: Three things a person writes on an invoice again and again. Problem 10: she should not
+#: have to type any of them. Kept here because they are words a person reads, and this is
+#: the one file that is audited for those.
+CANNED_NOTES = (
+    "I called them on the number in our records and they confirmed it.",
+    "I could not reach them. Trying again tomorrow.",
+    "Emailed them to confirm. Waiting for a reply.",
+)
+
+
+def draft_email(code: str, supplier: str, field: str | None = None) -> dict | None:
+    """The email she would otherwise write by hand.
+
+    Problem 6 asks for the missing field to be named *and the email drafted*; problem 11
+    says the phone call cannot be automated, so writing instead is the part that can be.
+    Both are the same feature and this is it.
+
+    The wording deliberately does not quote the invoice back at them beyond the field
+    name. An email that repeats an attacker's text is an email that carries it onward.
+    """
+    who = supplier or "there"
+    if code == "MISSING_FIELD":
+        missing = field or "a field we need"
+        return {
+            "subject": f"{supplier}: one field missing on your invoice",
+            "body": (f"Hello {who},\n\n"
+                     f"We have your invoice but cannot process it yet — {missing.lower()} "
+                     f"is not on it.\n\n"
+                     f"Could you send that, or a corrected invoice?\n\n"
+                     f"Thank you."),
+        }
+    if code in ("BANK_UNKNOWN", "ACCOUNT_REFUSED_ELSEWHERE", "TAINTED_ACCOUNT_NOT_IN_MASTER"):
+        return {
+            "subject": f"{supplier}: confirming your bank details",
+            "body": (f"Hello {who},\n\n"
+                     f"Your latest invoice gives an account we have not paid before. "
+                     f"Before we pay it, could you confirm the account by phone on the "
+                     f"number we already hold for you?\n\n"
+                     f"We will not act on bank details sent by email alone.\n\n"
+                     f"Thank you."),
+        }
+    return None
+
+
 # ------------------------------------------------------------------------- the outcome
 
 def outcome_sentence(decision: str, overridden: bool, override_reason: str | None,

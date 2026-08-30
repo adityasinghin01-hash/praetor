@@ -55,11 +55,22 @@ def _strings(obj, path="$"):
 # rendered -- `.outcome_label` is what a person sees, and that IS held to the rule. The
 # test below pins that, so this exclusion cannot quietly hide a regression.
 _DATA_SUFFIX = (".id", ".doc_id", ".span_id", ".key", ".text", ".phone", ".email",
-                ".outcome", ".vendor_key", ".source", ".verified_on", ".contact_name")
+                ".outcome", ".vendor_key", ".source", ".verified_on", ".contact_name",
+                # The two sides of an evidence comparison are values off the document
+                # and out of the vendor master: IBANs, invoice numbers, amounts. An IBAN
+                # is indistinguishable from a SHOUTY_CODE to the regex below, and it is
+                # data in exactly the way .doc_id and .phone above already are. The words
+                # around it -- .note, .field, .kind -- stay checked, which is the point.
+                ".on_invoice")
+
+#: Paths whose *every element* is document data, for lists the suffix test cannot reach.
+_DATA_LIST = (".in_records",)
 
 
 def _is_data(path: str) -> bool:
-    return path.endswith(_DATA_SUFFIX) or ".examples" in path or ".hardest" in path
+    return (path.endswith(_DATA_SUFFIX)
+            or any(part in path for part in _DATA_LIST)
+            or ".examples" in path or ".hardest" in path)
 
 
 def _responses(rows):
@@ -366,3 +377,37 @@ def test_the_audit_trail_shows_a_time_a_person_would_write():
     page = (pathlib.Path(__file__).resolve().parents[1] / "dashboard" / "app.html").read_text()
     assert "function when(iso)" in page
     assert "when(x.decided_at)" in page, "the audit table is printing the raw timestamp"
+
+
+# ------------------------------------------------------------------ what it cleared
+
+def test_cleared_agrees_with_the_queue_about_the_same_number(rows):
+    """Two screens, one arithmetic.
+
+    Screen 01 says "the system handled the other N" and screen 05 says "N invoices were
+    paid without you having to look". They are the same claim, so they must not be
+    computed twice — a home screen and a proof screen disagreeing about the headline
+    figure would discredit both.
+    """
+    assert api.cleared(rows)["cleared"] == api.queue(rows)["handled"]
+
+
+def test_cleared_keeps_the_two_counts_apart(rows):
+    """`cleared` is everything that never reached a person. `judged` is the subset that
+    raised something and was let through anyway. Merging them would inflate the second
+    number by everything that never tripped a rule, which is the flattering version."""
+    c = api.cleared(rows)
+    assert c["judged"] <= c["cleared"]
+    assert c["judged"] == len([r for r in rows if build.outcome_of(r) == "cleared"])
+    assert str(c["cleared"]) in c["headline"]
+    assert str(c["judged"]) in c["judged_note"]
+
+
+def test_the_spot_check_offers_only_invoices_it_actually_weighed(rows):
+    """"Show me one you let through" is a question about decisions that could have gone
+    the other way. An invoice that tripped nothing answers a question nobody asked."""
+    c = api.cleared(rows)
+    judged = {r["doc_id"] for r in rows if build.outcome_of(r) == "cleared"}
+    for item in c["sample"]:
+        assert item["id"] in judged
+        assert item["system_said"], "every sample must say what the system decided"

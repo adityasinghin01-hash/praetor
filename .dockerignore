@@ -9,3 +9,9 @@ __pycache__
 **/__pycache__
 .env
 .playwright-mcp
+
+# The web build stage runs `npm ci` inside the image. Without these, `COPY web/ ./`
+# would drop the host's macOS-arm64 node_modules on top of the Linux ones it had just
+# installed, and ship a build directory that is already stale.
+web/node_modules
+web/dist

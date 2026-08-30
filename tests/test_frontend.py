@@ -5,7 +5,7 @@ plus `tests/test_api.py` hold the server to it. A frontend is a new place for En
 appear, so it is a new place the rule can be broken -- by a hard-coded finding code, a
 paraphrase of a translated sentence, or a word Priya was never meant to learn.
 
-The runtime check lives in `web/src/Queue.test.tsx`, which walks the rendered DOM and
+The runtime check lives in `web/src/screens/screens.test.tsx`, which walks the rendered DOM and
 fails on any forbidden word. That is the right place for it: it tests what is actually on
 screen rather than what is in the source.
 
@@ -35,19 +35,19 @@ def _sources() -> list[pathlib.Path]:
 def test_the_frontend_checks_every_word_the_phrasebook_forbids():
     """The two lists must stay in step.
 
-    `web/src/Queue.test.tsx` asserts none of these appears in the rendered DOM. If
+    `web/src/screens/screens.test.tsx` asserts none of these appears in the rendered DOM. If
     somebody adds a word to `language.FORBIDDEN` and not to that list, the frontend
     stops being checked for it silently -- which is exactly how
     `tests/test_language.py`'s hard-coded emitter list let a finding through.
     """
-    checked = (WEB / "Queue.test.tsx").read_text()
+    checked = (WEB / "screens" / "screens.test.tsx").read_text()
     block = checked.split("for (const word of [", 1)
     assert len(block) == 2, "the frontend's code-word check has moved or been removed"
     listed = set(re.findall(r'"([a-z_]+)"', block[1].split("]", 1)[0]))
 
     missing = sorted(w for w in FORBIDDEN if w not in listed)
     assert not missing, (
-        f"web/src/Queue.test.tsx does not check for {missing}. Add them there, or the "
+        f"web/src/screens/screens.test.tsx does not check for {missing}. Add them there, or the "
         f"frontend is unchecked for vocabulary the phrasebook forbids.")
 
 
@@ -90,8 +90,10 @@ def test_the_frontend_holds_no_invoice_data():
 def test_severity_is_never_only_a_colour():
     """Roughly one man in twelve has some colour vision deficiency. Every severity must
     reach the screen as words too, which is what the URGENCY table is for."""
-    queue = (WEB / "Queue.tsx").read_text()
-    assert "URGENCY" in queue
+    # Screen 03 is where a severity now reaches a person. `Queue.tsx` held this table
+    # until the queue was retired with the four-job rebuild; the promise did not move.
+    verdict = (WEB / "screens" / "Verdict.tsx").read_text()
+    assert "URGENCY" in verdict
     for severity in ("stop", "check"):
-        assert re.search(rf'{severity}:\s*\{{\s*word:', queue), (
+        assert re.search(rf'{severity}:\s*\{{\s*word:', verdict), (
             f"severity {severity!r} has no word form; colour would be carrying it alone")

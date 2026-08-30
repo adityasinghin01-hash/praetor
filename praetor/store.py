@@ -285,19 +285,42 @@ def add_purchase_order(conn, tenant_id, po_ref, amount=None, currency=None) -> N
 
 
 class AlreadyApproved(RuntimeError):
-    """This document already has an approval. Approving is idempotent by schema."""
+    """This document already has a decision. Deciding is idempotent by schema.
+
+    The name predates rejections and is kept because it is what callers already catch.
+    It covers either decision: an invoice flagged as fraud cannot later be approved, and
+    that is the point rather than an accident.
+    """
 
 
 class NotEscalated(RuntimeError):
     """Only a document a human was actually asked to decide can be approved."""
 
 
-def record_approval(conn, tenant_id, doc_id, approved_by, codes) -> dict:
-    """Write the approval, refusing a duplicate or a document nobody escalated.
+#: The two things a person can decide about an invoice they were handed.
+DECISIONS = ("approved", "rejected")
 
-    Both refusals matter. The first stops a double payment; the second stops an approval
+
+def record_approval(conn, tenant_id, doc_id, approved_by, codes) -> dict:
+    """Approve. Kept as the name the rest of the codebase already calls."""
+    return record_decision(conn, tenant_id, doc_id, approved_by, codes, "approved")
+
+
+def record_decision(conn, tenant_id, doc_id, decided_by, codes,
+                    action: str = "approved") -> dict:
+    """Write what a person decided, refusing a duplicate or a document nobody escalated.
+
+    Both refusals matter. The first stops a double payment; the second stops a decision
     being manufactured for an invoice that was never put in front of a person.
+
+    **Only an approval establishes trust.** A rejection is a person saying this account
+    is wrong, so routing it through `_establish_trust` would do the exact opposite of
+    what they said and mark the attacker's account as known-good. That asymmetry is the
+    reason this function branches at the end rather than treating the two alike.
     """
+    if action not in DECISIONS:
+        raise ValueError(f"a decision is one of {DECISIONS}, not {action!r}")
+
     row = conn.execute(
         "SELECT decision FROM adjudications WHERE tenant_id=? AND doc_id=?",
         (tenant_id, doc_id)).fetchone()
@@ -310,19 +333,20 @@ def record_approval(conn, tenant_id, doc_id, approved_by, codes) -> dict:
             conn.execute(
                 "INSERT INTO approvals(tenant_id, doc_id, action, approved_by, codes, at)"
                 " VALUES (?,?,?,?,?,?)",
-                (tenant_id, doc_id, "approved", approved_by.strip().lower(),
+                (tenant_id, doc_id, action, decided_by.strip().lower(),
                  json.dumps(codes), now()))
     except sqlite3.IntegrityError as e:
         existing = conn.execute(
-            "SELECT approved_by, at FROM approvals WHERE tenant_id=? AND doc_id=?",
+            "SELECT action, approved_by, at FROM approvals WHERE tenant_id=? AND doc_id=?",
             (tenant_id, doc_id)).fetchone()
         if existing:
             raise AlreadyApproved(
-                f"{doc_id} was already approved by {existing['approved_by']} "
-                f"at {existing['at']}") from e
+                f"{doc_id} was already {existing['action']} by "
+                f"{existing['approved_by']} at {existing['at']}") from e
         raise
 
-    _establish_trust(conn, tenant_id, doc_id, approved_by.strip().lower())
+    if action == "approved":
+        _establish_trust(conn, tenant_id, doc_id, decided_by.strip().lower())
 
     return dict(conn.execute(
         "SELECT * FROM approvals WHERE tenant_id=? AND doc_id=?",
@@ -337,7 +361,7 @@ def norm_account(s: str | None) -> str:
 def _establish_trust(conn, tenant_id: str, doc_id: str, approved_by: str) -> str | None:
     """A human approved this invoice, so its account becomes trusted for this vendor.
 
-    Called only from record_approval, and record_approval is the only caller. That is
+    Called only for an approval, and never for a rejection. That is
     the trust policy in one sentence: approval establishes trust, arrival never does.
 
     Returns the account newly trusted, or None if the document carried no account or

@@ -1,3 +1,12 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+/*
+  ---break---
+*/
+@custom-variant dark (&:is(.dark *));
+
 /*
   PRAETOR — the review queue.
 
@@ -15,64 +24,103 @@
 */
 
 :root {
-  color-scheme: dark;
+  /* One world. Ink on paper has no dark mode, so there is no scheme to switch
+     and no @media (prefers-color-scheme) block below. Locked 30 Aug 2026. */
+  color-scheme: light;
 
-  --bg: #0d1117;
-  --panel: #151b23;
-  --panel-2: #1b232d;
-  --line: #262e3a;
-  --line-strong: #39424f;
+  /* ---- the palette. Three colours, and the third is used twice a page. ---- */
+  --paper:   #EFEEE8;
+  --paper-2: #E7E5DC;   /* a surface set into the page */
+  --paper-3: #DBD8CC;   /* paper in shadow */
+  --ink:     #0B0B0B;
+  --ink-2:   #2A2926;   /* ink thinned, for secondary type */
+  --ink-3:   #6E6C63;   /* paper's own hue pushed toward ink */
+  --seal:    #BE2B22;
 
-  --tx: #e9eef5;
-  --tx-dim: #9aa7b8;
-  --tx-faint: #6d7887;
+  /* ---- line weight. One weight reads as a wireframe; three read as drawn. ---- */
+  --w-hair:  1px;       /* interior detail */
+  --w-mid:   1.5px;     /* structural rule */
+  --w-heavy: 2.5px;     /* outer edge, and the side the shadow falls on */
 
-  --accent: #6cb6ff;
-  --accent-ink: #04121f;
-
-  /* Severity. Each is paired with a word and a glyph in the markup -- never alone. */
-  --stop: #ff7b72;
-  --stop-bg: #2a1517;
-  --check: #e3b341;
-  --check-bg: #262013;
-  --ok: #57d364;
-
-  --radius: 10px;
-  --radius-sm: 7px;
-  --gap: 1rem;
-
-  --font: ui-sans-serif, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  /* ---- type ---- */
+  --font-display: "Shippori Mincho B1", "Yu Mincho", Georgia, serif;
+  --font: "Zen Kaku Gothic New", "Hiragino Sans", ui-sans-serif, -apple-system, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
-  --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.22);
-}
+  /* ---- the chosen motion, as tokens so a screen cannot drift from the decision ---- */
+  --press-travel: 3px;                    /* stamp press */
+  --press-shadow: 3px 3px 0 var(--ink);
+  --draw-dur:  0.5s;                      /* draw-on icons: even hand, linear */
+  --draw-ease: linear;
+  --arrive-rise: 16px;                    /* lift and settle */
+  --arrive-dur:  0.46s;
+  --arrive-ease: cubic-bezier(.16, 1, .3, 1);
 
-/* Respect a light preference rather than forcing a dark room. */
-@media (prefers-color-scheme: light) {
-  :root {
-    color-scheme: light;
-    --bg: #ffffff;
-    --panel: #f7f9fc;
-    --panel-2: #eef2f7;
-    --line: #d8dee7;
-    --line-strong: #b8c2cf;
-    --tx: #131a22;
-    --tx-dim: #4d5866;
-    --tx-faint: #6b7684;
-    --accent: #0b62c4;
-    --accent-ink: #ffffff;
-    --stop: #b21f14;
-    --stop-bg: #fdf0ef;
-    --check: #7a5300;
-    --check-bg: #fdf6e3;
-    --ok: #106a2b;
-    --shadow: 0 1px 2px rgb(16 24 40 / 0.06), 0 8px 24px rgb(16 24 40 / 0.08);
-  }
+  --radius: 0;        /* manga is drawn with a ruler, not a radius */
+  --radius-sm: 0;
+  --gap: 1rem;
+  --shadow: none;     /* depth is hatching and offset, never a blur */
+
+  /* ---- legacy names from the queue screens, aliased onto the ink palette so the
+         old app restyles rather than breaks while it is replaced screen by screen ---- */
+  --bg: var(--paper);
+  --panel: var(--paper);
+  --panel-2: var(--paper-2);
+  --line: rgba(11, 11, 11, 0.20);
+  --line-strong: var(--ink);
+  --tx: var(--ink);
+  --tx-dim: var(--ink-2);
+  --tx-faint: var(--ink-3);
+  --accent: var(--ink);
+  --accent-ink: var(--paper);
+
+  /* Severity keeps its names, but colour is no longer what carries it — the word
+     and the shape do, exactly as rule 1 below already required. */
+  --stop: var(--seal);
+  --stop-bg: var(--paper-2);
+  --check: var(--ink);
+  --check-bg: var(--paper-2);
+  --ok: var(--ink);
+
+  /* ---- shadcn / Watermelon tokens, mapped onto the same palette so registry
+         components inherit the direction instead of shipping their own grey ---- */
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: var(--paper);
+  --card-foreground: var(--ink);
+  --popover: var(--paper);
+  --popover-foreground: var(--ink);
+  --primary: var(--ink);
+  --primary-foreground: var(--paper);
+  --secondary: var(--paper-2);
+  --secondary-foreground: var(--ink);
+  --muted: var(--paper-2);
+  --muted-foreground: var(--ink-3);
+  --accent-foreground: var(--paper);
+  --destructive: var(--seal);
+  --border: var(--ink);
+  --input: var(--ink);
+  --ring: var(--seal);
+  --sidebar: var(--paper);
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--ink);
+  --sidebar-primary-foreground: var(--paper);
+  --sidebar-accent: var(--paper-2);
+  --sidebar-accent-foreground: var(--ink);
+  --sidebar-border: var(--ink);
+  --sidebar-ring: var(--seal);
 }
 
 * { box-sizing: border-box; }
 
-html { font-size: 100%; }
+html {
+  font-size: 100%;
+  /* The cursor is a fixed decorative overlay whose corners are transformed to follow the
+     pointer. On a narrow window they land outside the viewport and extend the scrollable
+     area, so the page can be dragged sideways for no reason. `clip` rather than `hidden`:
+     hidden turns this into a scroll container and silently breaks position:sticky. */
+  overflow-x: clip;
+}
 
 body {
   margin: 0;
@@ -379,4 +427,651 @@ kbd {
   .headline { font-size: 1.15rem; }
   /* A tap target smaller than this is a mis-tap on a phone. */
   .btn, .tab { min-height: 2.75rem; }
+}
+/*
+  ---break---
+*/
+@theme inline {
+  --font-heading: var(--font-sans);
+  --font-sans: 'Geist Variable', sans-serif;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --font-sans: "Zen Kaku Gothic New", "Hiragino Sans", ui-sans-serif, -apple-system, sans-serif;
+  --font-serif: "Shippori Mincho B1", "Yu Mincho", Georgia, serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+/*
+  ---break---
+*/
+/* No .dark block. One world — see the note at the top of :root. */
+
+/*
+  ---break---
+*/
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+/* ===================================================================
+   The locked primitives.
+
+   These are the twelve decisions made on 30 Aug 2026, written once so a
+   screen cannot quietly drift from them. Every screen built from here on
+   composes these rather than restating the values. See docs/FRONTEND.md.
+   =================================================================== */
+
+/* --- display type ------------------------------------------------- */
+
+.display { font-family: var(--font-display); font-weight: 800; letter-spacing: 0.01em; }
+
+/* --- buttons: ruled block, three weights, stamp press -------------- */
+
+.ink-btn {
+  position: relative;
+  font: inherit;
+  font-weight: 700;
+  background: var(--paper);
+  color: var(--ink);
+  cursor: pointer;
+  border: var(--w-mid) solid var(--ink);
+  border-bottom-width: var(--w-heavy);
+  border-right-width: var(--w-heavy);
+  padding: 0.5rem 0.95rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  box-shadow: var(--press-shadow);
+  transition: translate 0.07s, box-shadow 0.07s;
+  overflow: hidden;
+}
+.ink-btn:active {
+  translate: var(--press-travel) var(--press-travel);
+  box-shadow: 0 0 0 var(--ink);
+}
+.ink-btn > * { position: relative; z-index: 2; }
+.ink-btn kbd {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  border: var(--w-hair) solid currentColor;
+  padding: 0 0.32rem;
+}
+
+/* The inverted state is deliberately clean. Grain belongs to the paper,
+   not to the ink — it eats the counters in small type on a dark ground. */
+.ink-btn[aria-pressed="true"],
+.ink-btn.is-ink {
+  background: var(--ink);
+  color: var(--paper);
+  background-image: none;
+}
+
+/* --- paper grain: applied to paper surfaces only ------------------- */
+
+.grain {
+  background-image: radial-gradient(var(--ink) 0.5px, transparent 0.6px);
+  background-size: 3px 3px;
+  background-blend-mode: normal;
+}
+.grain.is-ink, .is-ink .grain { background-image: none; }
+
+/* --- draw-on icons: even hand, linear ------------------------------ */
+
+.ink-ico { width: 1.5rem; height: 1.5rem; display: block; flex: none; }
+.ink-ico * { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: square; }
+.ink-ico.draw * {
+  stroke-dasharray: var(--draw-len, 120);
+  stroke-dashoffset: var(--draw-len, 120);
+  transition: stroke-dashoffset var(--draw-dur) var(--draw-ease);
+}
+.ink-ico.draw.is-drawn * { stroke-dashoffset: 0; }
+
+/* --- arrival: lift and settle -------------------------------------- */
+
+.ink-arrive { opacity: 0; transform: translateY(var(--arrive-rise)); }
+.ink-arrive.is-in {
+  opacity: 1;
+  transform: none;
+  transition: opacity 0.34s, transform var(--arrive-dur) var(--arrive-ease);
+}
+
+/* --- the key rail, and the search that sits on it ------------------ */
+
+.ink-rail {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  border: var(--w-heavy) solid var(--ink);
+  padding: 0.55rem 0.8rem;
+  background: var(--paper);
+}
+.ink-rail .keys { display: flex; gap: 0.4rem; }
+.ink-rail .keys b {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  border: var(--w-mid) solid var(--ink);
+  box-shadow: 2px 2px 0 var(--ink);
+  padding: 0.2rem 0.45rem;
+  background: var(--paper);
+}
+.ink-search {
+  flex: 1 1 12rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-bottom: var(--w-mid) solid var(--ink);
+  padding-bottom: 0.2rem;
+}
+.ink-search input {
+  font: inherit;
+  border: 0;
+  background: none;
+  outline: none;
+  color: var(--ink);
+  width: 100%;
+}
+.ink-caret {
+  width: 2px;
+  height: 1em;
+  background: var(--seal);
+  flex: none;
+  animation: ink-blink 1.05s steps(1) infinite;
+}
+@keyframes ink-blink { 50% { opacity: 0; } }
+
+/* The rail's keys are buttons, not decoration — the cap and its label share one target
+   so the mouse and the keyboard reach the same action. */
+.ink-rail .keys button {
+  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--ink);
+  cursor: pointer;
+}
+.ink-rail .keys button:disabled { color: var(--ink-3); cursor: default; }
+.ink-rail .keys button:disabled b { border-color: var(--ink-3); box-shadow: 2px 2px 0 var(--ink-3); }
+.ink-rail .keys button span { font-size: 0.8rem; }
+.ink-rail .keys { gap: 0.9rem; flex-wrap: wrap; }
+.ink-search .ink-ico { width: 0.95rem; height: 0.95rem; }
+
+/* ------------------------------------------------------- screen 02 — Scan */
+
+/* The rail sits under the stage and must be exactly as wide as it. The stage is
+   height-capped and 4:3, so the *screen* is capped to the width that implies —
+   otherwise the rail runs on past the frame it belongs to. */
+.scan-screen {
+  display: grid;
+  gap: 0;
+  /* 100% has to be in here: the height-derived term alone is 787px on an 844px-tall
+     phone, which is twice the width of the screen it is on. */
+  width: min(62rem, calc(70vh * 4 / 3), 100%);
+  margin: 0 auto;
+  padding: 1.5rem var(--gap) 0;
+}
+
+.scan-stage {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  width: 100%;
+  border: var(--w-heavy) solid var(--ink);
+  background: var(--paper-2);
+  overflow: hidden;
+}
+
+/* The bands ride over the camera feed. Multiply keeps paper transparent and lets only
+   the ink darken what is underneath, so the sweep reads as ink on the page rather than
+   as a panel laid over it. */
+.scan-bands {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  mix-blend-mode: multiply;
+  opacity: 0.55;
+  pointer-events: none;
+}
+.scan-bands canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* Unconditional. The shader has its own colour handling and this page has three colours,
+   none of which it knows about — grayscale here means no hue can reach the screen
+   whatever the uniforms do. */
+.scan-bands canvas { filter: grayscale(1); }
+
+.scan-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  object-fit: cover;
+  /* Ink on paper: the camera feed is desaturated so a colour photograph does not
+     reintroduce a palette the rest of the app spent its whole design removing. */
+  filter: grayscale(1) contrast(1.15);
+}
+
+.scan-read {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.6rem 0.9rem;
+  background: var(--ink);
+  color: var(--paper);
+  font-weight: 500;
+}
+.scan-read .g { font-family: var(--font-display); font-weight: 800; width: 1.3rem; text-align: center; flex: none; }
+/* Severity is never colour alone: the glyph and the sentence carry it too. */
+.scan-read.tone-stop { background: var(--seal); }
+.scan-read .scan-doc { margin-left: auto; font-family: var(--mono); font-size: 0.78rem; opacity: 0.85; }
+
+.scan-screen .ink-rail { border-top: 0; }
+
+/* --------------------------------------------------- screen 03 — Verdict */
+
+.verdict { max-width: 62rem; margin: 0 auto; padding: 1.5rem var(--gap) 0; display: grid; gap: 0; }
+
+.verdict-card {
+  border: var(--w-heavy) solid var(--ink);
+  background: var(--paper);
+  padding: clamp(1.2rem, 3.4vw, 2.2rem);
+  display: grid;
+  gap: 1rem;
+}
+
+.verdict-urgency {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.verdict-urgency .glyph {
+  font-family: var(--font-display);
+  border: var(--w-mid) solid currentColor;
+  width: 1.35rem; height: 1.35rem;
+  display: grid; place-items: center;
+  flex: none;
+}
+.verdict-left { margin-left: auto; color: var(--ink-3); letter-spacing: 0.08em; }
+
+.verdict-what { font-family: var(--font-display); font-size: clamp(1.35rem, 3.4vw, 2.1rem); line-height: 1.24; }
+.verdict-do { font-size: 1.05rem; max-width: 38rem; }
+
+.verdict-who { display: grid; gap: 0.15rem; font-size: 0.85rem; }
+.verdict-warning { color: var(--ink-3); }
+
+.verdict-clear { font-size: clamp(1.4rem, 4vw, 2.4rem); padding: 3rem 0; text-align: center; }
+.verdict-refused { border-left: 3px solid var(--seal); padding-left: 0.8rem; color: var(--seal); }
+
+/* the comparison: what the invoice says, beside what her records say */
+.cmp-set { display: grid; gap: 0.9rem; margin-top: 0.3rem; }
+
+.cmp { border-top: var(--w-hair) solid var(--hair, rgba(11,11,11,0.2)); padding-top: 0.7rem; }
+.cmp-field { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 0.4rem; }
+
+.cmp-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; align-items: start; }
+@media (max-width: 34rem) { .cmp-sides { grid-template-columns: 1fr; } }
+
+.cmp-side {
+  font: inherit;
+  text-align: left;
+  display: grid;
+  gap: 0.15rem;
+  border: 0;
+  border-left: var(--w-heavy) solid var(--ink);
+  background: none;
+  padding: 0.1rem 0 0.1rem 0.7rem;
+  color: var(--ink);
+}
+button.cmp-side { cursor: pointer; }
+button.cmp-side:hover .cmp-value { text-decoration: underline; }
+/* The record side is not the thing being questioned, so it reads quieter. */
+.cmp-side.is-record { border-left-color: var(--ink-3); }
+
+.cmp-label { font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+.cmp-value { font-family: var(--mono); font-size: 0.95rem; overflow-wrap: anywhere; }
+.cmp-value.is-absent { color: var(--ink-3); font-family: var(--font); }
+.cmp-note { font-size: 0.8rem; color: var(--ink-2); margin-top: 0.35rem; }
+
+/* --------------------------------------------------- screen 04 — A job */
+
+.job { max-width: 62rem; margin: 0 auto; padding: 1.5rem var(--gap) 0; display: grid; gap: 0; }
+
+.job-pick {
+  border: var(--w-heavy) solid var(--ink);
+  background: var(--paper);
+  padding: clamp(1.4rem, 4vw, 2.6rem);
+}
+
+.job-count { font-size: clamp(3rem, 11vw, 6rem); line-height: 0.9; font-variant-numeric: tabular-nums; }
+.job-count-note { color: var(--ink-2); margin-bottom: 1.6rem; max-width: 26rem; }
+
+.job-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; border-top: var(--w-mid) solid var(--ink); }
+.job-list li { border-bottom: var(--w-mid) solid var(--ink); }
+
+.job-tile {
+  font: inherit;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 0.9rem 0.2rem;
+  cursor: pointer;
+  color: var(--ink);
+  display: grid;
+  grid-template-columns: 3.5rem 1fr;
+  grid-template-areas: "n title" "n q";
+  column-gap: 0.8rem;
+  align-items: baseline;
+}
+.job-tile:hover:not(:disabled) .job-tile-title { text-decoration: underline; }
+.job-tile:disabled { color: var(--ink-3); cursor: default; }
+
+.job-tile-n {
+  grid-area: n;
+  font-family: var(--font-display);
+  font-size: 2rem;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  align-self: center;
+}
+.job-tile-title { grid-area: title; font-family: var(--font-display); font-size: 1.25rem; }
+.job-tile-q { grid-area: q; font-size: 0.85rem; color: var(--ink-2); }
+
+.job-supplier { display: grid; gap: 0.2rem; font-size: 0.9rem; }
+/* A batch action has to announce its own size before the key is pressed. */
+.job-batch { font-weight: 700; }
+
+/* --------------------------------------------------- screen 01 — Today */
+
+.today { max-width: 62rem; margin: 0 auto; padding: 1.5rem var(--gap) 0; }
+
+.today-head { margin-bottom: 1.6rem; }
+.today-headline {
+  font-size: clamp(1.5rem, 4.2vw, 2.6rem);
+  line-height: 1.18;
+  max-width: 24ch;
+}
+.today-through { color: var(--ink-2); margin-top: 0.5rem; }
+
+.today-entries { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: var(--w-heavy) solid var(--ink); }
+@media (max-width: 34rem) { .today-entries { grid-template-columns: 1fr; } }
+
+.entry {
+  position: relative;
+  font: inherit;
+  text-align: left;
+  background: var(--paper);
+  border: 0;
+  border-right: var(--w-mid) solid var(--ink);
+  padding: clamp(1rem, 3vw, 1.8rem);
+  cursor: pointer;
+  color: var(--ink);
+  display: grid;
+  gap: 0.35rem;
+  justify-items: start;
+}
+.today-entries .entry:last-of-type { border-right: 0; }
+@media (max-width: 34rem) {
+  .entry { border-right: 0; border-bottom: var(--w-mid) solid var(--ink); }
+  .today-entries .entry:last-of-type { border-bottom: 0; }
+}
+.entry:hover:not(:disabled) { background: var(--paper-2); }
+.entry:disabled { color: var(--ink-3); cursor: default; }
+.entry-title { font-family: var(--font-display); font-size: 1.35rem; }
+.entry-note { font-size: 0.85rem; color: var(--ink-2); }
+.entry-key {
+  position: absolute;
+  top: 0; right: 0;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.2rem 0.45rem;
+  border-left: var(--w-mid) solid var(--ink);
+  border-bottom: var(--w-mid) solid var(--ink);
+}
+
+.today-error { margin-top: 1rem; display: flex; align-items: center; gap: 0.8rem; color: var(--seal); }
+
+.today-jobs { margin-top: 1.8rem; }
+.today-jobs-head {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-bottom: 0.4rem;
+}
+
+/* --------------------------------------------- screen 05 — See what it did */
+
+.did { max-width: 62rem; margin: 0 auto; padding: 1.5rem var(--gap) 0; }
+
+.did-wall {
+  position: relative;
+  border: var(--w-heavy) solid var(--ink);
+  background: var(--paper-2);
+  height: clamp(18rem, 46vh, 26rem);
+  overflow: hidden;
+}
+.did-wall-inner { position: absolute; inset: 0; }
+
+/* The number sits over the wall, on paper, so it is never fighting a moving tile. */
+.did-figure {
+  position: absolute;
+  left: 0; bottom: 0;
+  background: var(--paper);
+  border-top: var(--w-heavy) solid var(--ink);
+  border-right: var(--w-heavy) solid var(--ink);
+  padding: 0.9rem 1.4rem 1.1rem;
+  max-width: min(30rem, 88%);
+}
+.did-headline { font-size: 1.05rem; margin-top: 0.3rem; max-width: 22ch; }
+
+.did-check {
+  border: var(--w-heavy) solid var(--ink);
+  border-top: 0;
+  background: var(--paper);
+  padding: clamp(1rem, 3vw, 1.8rem);
+  display: grid;
+  gap: 1rem;
+}
+.did-judged { color: var(--ink-2); max-width: 46ch; }
+
+.did-spot { border-left: var(--w-heavy) solid var(--ink); padding-left: 0.9rem; display: grid; gap: 0.25rem; }
+.did-spot-label { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); }
+.did-spot-supplier { font-family: var(--font-display); font-size: 1.2rem; }
+.did-spot-said { font-size: 0.95rem; }
+.did-spot-note { font-size: 0.82rem; color: var(--ink-3); }
+
+/* DriftWall ships a soft drop shadow as its depth cue. Depth in this direction is an
+   offset edge, never a blur — the tiles are sheets of paper, drawn. */
+.did-wall-inner .drift-wall__tile,
+.did-wall-inner [class*="drift-wall"] img { box-shadow: none !important; }
+
+/* ------------------------------------------------ screen 06 — What we stopped */
+
+.stopped { max-width: 62rem; margin: 0 auto; padding: 1.5rem var(--gap) 0; }
+
+.stopped-card {
+  border: var(--w-heavy) solid var(--ink);
+  background: var(--paper);
+  padding: clamp(1.2rem, 3.4vw, 2.2rem);
+  display: grid;
+  gap: 1.4rem;
+}
+.stopped-headline { font-size: clamp(1.3rem, 3.4vw, 2rem); line-height: 1.24; max-width: 26ch; }
+
+.stopped-figures { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; }
+@media (max-width: 34rem) { .stopped-figures { grid-template-columns: 1fr; } }
+
+.figure { border-left: var(--w-heavy) solid var(--ink); padding-left: 0.9rem; }
+.figure-n {
+  font-family: var(--font-display);
+  font-size: clamp(1.4rem, 3.6vw, 2.1rem);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.figure-note { font-size: 0.82rem; color: var(--ink-2); margin-top: 0.25rem; max-width: 34ch; }
+
+.stopped-label {
+  font-size: 0.72rem; font-weight: 700; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--ink-3); margin-bottom: 0.5rem;
+}
+.stopped-controls ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+.stopped-controls li {
+  display: grid;
+  grid-template-columns: 3rem 1fr;
+  gap: 0.7rem;
+  align-items: baseline;
+  padding: 0.45rem 0;
+  border-bottom: var(--w-hair) solid rgba(11, 11, 11, 0.2);
+}
+.control-times { font-family: var(--font-display); font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+.control-what { font-size: 0.92rem; }
+.stopped-decisions li { grid-template-columns: 1fr; gap: 0.1rem; }
+
+/* ------------------------------------------------ screen 07 — Try to break it */
+
+.brk { max-width: 62rem; margin: 0 auto; padding: 1.5rem var(--gap) 0; }
+
+.brk-card {
+  border: var(--w-heavy) solid var(--ink);
+  background: var(--paper);
+  padding: clamp(1.2rem, 3.4vw, 2.2rem);
+  display: grid;
+  gap: 1.1rem;
+}
+.brk-doc { font-family: var(--font-display); font-size: 1.3rem; }
+
+.brk-field { display: grid; gap: 0.35rem; }
+.brk-field textarea {
+  font: inherit;
+  font-family: var(--mono);
+  font-size: 0.9rem;
+  color: var(--ink);
+  background: var(--paper-2);
+  border: var(--w-mid) solid var(--ink);
+  padding: 0.6rem 0.7rem;
+  resize: vertical;
+}
+.brk-field textarea:focus-visible { outline: 3px solid var(--seal); outline-offset: 2px; }
+
+.brk-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+
+.brk-result { display: grid; gap: 0.9rem; border-top: var(--w-mid) solid var(--ink); padding-top: 1rem; }
+.brk-verdict { font-family: var(--font-display); font-size: 1.15rem; line-height: 1.35; }
+/* The one place a second colour is allowed on this screen: something got through. */
+.brk-verdict.is-through { color: var(--seal); }
+
+.brk-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; counter-reset: step; }
+.brk-steps li {
+  display: grid;
+  grid-template-columns: 2rem 1fr;
+  grid-template-areas: "n name" ". detail";
+  gap: 0.15rem 0.7rem;
+  padding: 0.55rem 0;
+  border-bottom: var(--w-hair) solid rgba(11, 11, 11, 0.2);
+}
+.brk-step-n {
+  grid-area: n;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  border: var(--w-mid) solid var(--ink);
+  width: 1.5rem; height: 1.5rem;
+  display: grid; place-items: center;
+}
+.brk-step-name { grid-area: name; font-weight: 700; font-size: 0.95rem; }
+.brk-step-detail { grid-area: detail; font-size: 0.84rem; color: var(--ink-2); }
+
+/* Where it stopped is the interesting part, so that row is the solid one. */
+.brk-steps li.is-stop .brk-step-n { background: var(--ink); color: var(--paper); }
+.brk-steps li.is-skipped { color: var(--ink-3); }
+.brk-steps li.is-skipped .brk-step-n { border-color: var(--ink-3); }
+
+/* Each currency on its own line. They are never added together. */
+.figure .figure-n + .figure-n { margin-top: 0.15rem; }
+.figure-cur { font-family: var(--font); font-size: 0.7em; letter-spacing: 0.08em; color: var(--ink-3); }
+
+/* ---------------------------------------------- the drafted email (problems 6 and 11) */
+
+.draft {
+  border-left: var(--w-heavy) solid var(--ink);
+  padding-left: 0.9rem;
+  display: grid;
+  gap: 0.3rem;
+  margin-top: 0.2rem;
+}
+.draft-to { font-family: var(--mono); font-size: 0.82rem; color: var(--ink-2); }
+.draft-subject { font-weight: 700; }
+/* The body keeps its line breaks: it is a letter, not a paragraph. */
+.draft-body { white-space: pre-wrap; font-size: 0.88rem; color: var(--ink-2); max-width: 46ch; }
+.draft-send { margin-top: 0.5rem; justify-self: start; text-decoration: none; }
+
+/* Secondary findings: present, but never competing with the one thing to do. */
+.also { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.2rem; }
+.also li {
+  font-size: 0.85rem;
+  color: var(--ink-2);
+  padding-left: 0.9rem;
+  border-left: var(--w-mid) solid var(--ink-3);
+}
+
+/* Three notes she writes again and again, one key each. */
+.canned { margin-top: 0.9rem; }
+.canned-label { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 0.4rem; }
+.canned ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; }
+.canned-btn { display: flex; align-items: center; gap: 0.6rem; width: 100%; text-align: left; }
+.canned-btn kbd {
+  font-family: var(--mono); font-size: 0.72rem;
+  border: var(--w-mid) solid currentColor; padding: 0 0.32rem; flex: none;
 }

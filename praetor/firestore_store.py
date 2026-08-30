@@ -139,14 +139,26 @@ def add_purchase_order(db, tenant_id, po_ref, amount=None, currency=None) -> Non
 
 
 def record_approval(db, tenant_id, doc_id, approved_by, codes) -> dict:
-    """Write the approval, refusing a duplicate or a document nobody escalated.
+    """Approve. Kept as the name the rest of the codebase already calls."""
+    return record_decision(db, tenant_id, doc_id, approved_by, codes, "approved")
+
+
+def record_decision(db, tenant_id, doc_id, decided_by, codes,
+                    action: str = "approved") -> dict:
+    """Write what a person decided, refusing a duplicate or a document nobody escalated.
 
     Firestore has no composite primary key, so uniqueness cannot be a constraint here the
     way it is in SQLite. A transaction gets us the same guarantee -- Firestore
     transactions are serialisable, so two concurrent approvals cannot both observe the
     document as unapproved -- but the rule now lives in code rather than in the schema,
     which is a weaker place for it.
+
+    As in the SQLite twin, **only an approval establishes trust** — a rejection saying
+    the account is wrong must never mark that account known-good.
     """
+    if action not in store.DECISIONS:
+        raise ValueError(f"a decision is one of {store.DECISIONS}, not {action!r}")
+
     adj = db.collection(ADJ).document(_key(tenant_id, doc_id)).get()
     if not adj.exists or adj.to_dict().get("decision") != "escalate":
         seen = "no adjudication on record" if not adj.exists else adj.to_dict()["decision"]
@@ -154,8 +166,8 @@ def record_approval(db, tenant_id, doc_id, approved_by, codes) -> dict:
 
     ref = db.collection(APPROVALS).document(_key(tenant_id, doc_id))
     record = {
-        "tenant_id": tenant_id, "doc_id": doc_id, "action": "approved",
-        "approved_by": approved_by.strip().lower(),
+        "tenant_id": tenant_id, "doc_id": doc_id, "action": action,
+        "approved_by": decided_by.strip().lower(),
         "codes": json.dumps(codes), "at": now(),
     }
 
@@ -165,12 +177,13 @@ def record_approval(db, tenant_id, doc_id, approved_by, codes) -> dict:
         if snap.exists:
             existing = snap.to_dict()
             raise AlreadyApproved(
-                f"{doc_id} was already approved by {existing['approved_by']} "
-                f"at {existing['at']}")
+                f"{doc_id} was already {existing.get('action', 'approved')} by "
+                f"{existing['approved_by']} at {existing['at']}")
         tx.set(ref, record)
 
     _write(db.transaction())
-    _establish_trust(db, tenant_id, doc_id, record["approved_by"])
+    if action == "approved":
+        _establish_trust(db, tenant_id, doc_id, record["approved_by"])
     return record
 
 

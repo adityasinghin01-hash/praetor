@@ -907,3 +907,49 @@ exfiltration, which substitutes no value — that technique is excluded and name
 than quietly counted. And the mix, 480 attacks to 220 clean, is a diagnostic design that
 says nothing about how often real invoices carry an injection; the README says so, and no
 sentence anywhere should read as if it does.
+
+---
+
+## 33. The frontend takes components from a registry, not from us
+
+**Chosen.** React Bits, installed through the shadcn registry as real source into
+`web/src/components/`, and modified in place. Watermelon UI supplies the plain controls —
+button, dialog, progress, separator, badge, skeleton. GSAP is the animation engine for
+bespoke scroll work.
+
+**Rejected: writing every effect by hand.** A working demo of six hand-written effects was
+built first and thrown away. It proved the placements and nothing else: a halftone dissolve
+written in an evening is worse than one with a shader behind it, and the hand-written
+version is ours to maintain forever.
+
+**Rejected: a second component library alongside Watermelon.** Cult UI and Skiper UI cover
+the same ground. Two defaults is how a styling system drifts.
+
+**Rejected: Dither**, which was wanted for the one-bit ink field. It pulls `three`,
+`@react-three/fiber` and `postprocessing` — the entire WebGL stack for a dot pattern.
+`HalftoneReveal` does the same job on `ogl` and is closer to the direction anyway: its
+uniforms are literally `uInk`, `uPaper`, `uAngle`, `uDotSize` and `uShape`.
+
+**Why.** The visual direction is screentone, hatching and one seal red — mechanisms that
+already exist in these libraries, parameterised. `TargetCursor` recolours through
+`cursorColor` and `cursorColorOnTarget`; `PixelCard` through a `colors` string;
+`DriftWall` through `grayscale`, `dim` and `overlayColor`. Every one of those is
+configuration, not a rewrite, so the ink direction costs props rather than code.
+
+**What it costs.** Three things, all real.
+
+Tailwind v4 now sits under a stylesheet that opened with a written argument for being
+hand-authored, and shadcn will not initialise without it. React went 18.3.1 → 19.2.8
+because the registry's peer tree demands it; the 18 tests pass unchanged, but that is the
+whole app upgraded to satisfy a component library. And `motion` is a second animation
+engine beside GSAP — both Counter and Watermelon assume it, so the choice was to accept it
+or hand-write the parts that need it, which is the thing this entry rejects.
+
+Vendored source also does not typecheck under this repo's flags. Thirty-six errors across
+seven files, all from `verbatimModuleSyntax` and `noUncheckedIndexedAccess`, all fixed by
+hand and all re-broken by any upgrade of those components.
+
+React Bits is MIT **plus Commons Clause** — building with it is fine, selling the
+component library is not. `~/Desktop/resources/animations/moon-breathing-cursor` has no
+licence at all and stays a reference; its dual-canvas and DPR-aware resize technique is
+worth reading, its code is not shippable.
