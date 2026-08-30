@@ -184,12 +184,17 @@ def _evidence_for(doc_id: str, codes: list[str]) -> list[dict]:
                 language.evidence_note(code, seen), seen))
 
         elif code == "MISSING_FIELD":
-            # Which field is missing is not on the code, so it is recovered the same
-            # way the rule found it: a field this supplier almost always fills in, that
-            # this invoice does not carry.
+            # Which field is missing is not carried on the code, so it is recovered the
+            # same way the rule found it — and with the rule's own threshold, imported
+            # rather than repeated. Hardcoding 0.9 beside a rule that fires at 0.8 meant
+            # a field on 85% of a supplier's invoices raised MISSING_FIELD and then
+            # showed an empty comparison: the screen saying something was missing and
+            # declining to say what.
+            from praetor.baseline_rules import EXPECTED_PRESENCE
+
             absent: list[str] = []
             for name, share in sorted(pattern.field_presence.items()):
-                if share >= 0.9 and not _field(doc_id, name):
+                if share >= EXPECTED_PRESENCE and not _field(doc_id, name):
                     absent.append(name)
             for name in absent:
                 out.append(_comparison(
@@ -205,8 +210,10 @@ def _draft_for(doc_id: str, codes: list[str], supplier: str) -> dict | None:
     pattern = _pattern_for(doc_id)
     for code in codes:
         if code == "MISSING_FIELD" and pattern is not None:
+            from praetor.baseline_rules import EXPECTED_PRESENCE
+
             for name, share in sorted(pattern.field_presence.items()):
-                if share >= 0.9 and not _field(doc_id, name):
+                if share >= EXPECTED_PRESENCE and not _field(doc_id, name):
                     return language.draft_email(code, supplier, language.field_label(name))
             continue
         drafted = language.draft_email(code, supplier)

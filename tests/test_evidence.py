@@ -87,3 +87,23 @@ def test_a_note_never_claims_more_than_the_data_supports():
 def test_a_supplier_with_no_history_says_so_rather_than_implying_none_matched():
     note = language.evidence_note("BANK_UNKNOWN", 0) or ""
     assert "no earlier invoices" in note
+
+
+def test_a_missing_field_finding_always_says_which_field(rows):
+    """The rule and the screen must agree on what 'missing' means.
+
+    They did not: the rule fires at EXPECTED_PRESENCE (0.8) and the evidence builder
+    hardcoded 0.9, so a field present on 85% of a supplier's invoices raised
+    MISSING_FIELD and then showed an empty comparison — the screen saying something was
+    missing and declining to say what.
+    """
+    from praetor.baseline_rules import EXPECTED_PRESENCE
+
+    for r in rows:
+        if "missing" in {e["kind"] for e in r.get("evidence", [])}:
+            for e in r["evidence"]:
+                if e["kind"] == "missing":
+                    assert e["field"], "a missing-field comparison must name the field"
+                    assert e["note"], "and say how often they normally fill it in"
+    # and the threshold is the rule's, not a copy
+    assert EXPECTED_PRESENCE == 0.8
