@@ -92,29 +92,49 @@ COOKIE = "praetor_session"
 
 LOGIN_PAGE = """<!doctype html><meta charset="utf-8">
 <title>PRAETOR &mdash; sign in</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+{fonts}
 <style>
-:root {{ --bg:#0e1116; --panel:#161b22; --line:#232a34; --tx:#e6edf3; --dim:#8b949e;
-        --acc:#58a6ff; --crit:#f85149; }}
+/* The door to the app, in the app's own direction: ink on paper, one seal red, three
+   line weights, nothing rounded. Written inline and standalone on purpose -- this page
+   is served by the stdlib transport too, where there is no build and no stylesheet to
+   link. `{{fonts}}` is where the deployed transport injects the real faces; without it
+   the fallbacks below carry it, which is the difference between right and wrong-ish,
+   not between working and broken. */
+:root {{
+  --paper:#EFEEE8; --paper-2:#E7E5DC; --ink:#0B0B0B; --ink-2:#2A2926;
+  --ink-3:#6E6C63; --seal:#BE2B22;
+  --w-hair:1px; --w-mid:1.5px; --w-heavy:2.5px;
+  --display:"Shippori Mincho B1","Yu Mincho",Georgia,serif;
+  --ui:"Zen Kaku Gothic New","Hiragino Sans",ui-sans-serif,-apple-system,sans-serif;
+  --mono:ui-monospace,Menlo,Consolas,monospace;
+}}
 * {{ box-sizing:border-box; }}
-body {{ margin:0; min-height:100vh; display:grid; place-items:center; background:var(--bg);
-  color:var(--tx); font:14px/1.5 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif; }}
-.card {{ background:var(--panel); border:1px solid var(--line); border-radius:12px;
-  padding:30px 32px; width:392px; }}
-h1 {{ margin:0 0 6px; font-size:18px; letter-spacing:-.01em; }}
-p.sub {{ margin:0 0 22px; color:var(--dim); font-size:12.5px; line-height:1.5; }}
-label {{ display:block; font-size:11px; text-transform:uppercase; letter-spacing:.06em;
-  color:var(--dim); margin:14px 0 5px; }}
-input {{ width:100%; background:#0b0f14; border:1px solid var(--line); color:var(--tx);
-  border-radius:7px; padding:9px 11px; font:13px ui-monospace,Menlo,monospace; }}
-input:focus {{ outline:2px solid rgba(88,166,255,.5); outline-offset:1px; }}
-button {{ width:100%; margin-top:20px; background:rgba(88,166,255,.16); color:var(--acc);
-  border:1px solid rgba(88,166,255,.45); border-radius:7px; padding:9px;
-  font:13px inherit; font-weight:600; cursor:pointer; }}
-button:hover {{ background:rgba(88,166,255,.26); }}
-.err {{ margin-top:16px; color:var(--crit); font-size:12.5px; }}
-.seed {{ margin-top:22px; padding-top:16px; border-top:1px solid var(--line);
-  color:var(--dim); font-size:11.5px; line-height:1.7; }}
-.seed code {{ color:var(--acc); font-family:ui-monospace,Menlo,monospace; }}
+body {{ margin:0; min-height:100vh; display:grid; place-items:center; padding:1.5rem;
+  background:var(--paper); color:var(--ink); font:0.95rem/1.6 var(--ui); }}
+.card {{ background:var(--paper); border:var(--w-heavy) solid var(--ink);
+  padding:2rem 2.1rem 2.2rem; width:min(26rem,100%); }}
+h1 {{ margin:0 0 .2rem; font-family:var(--display); font-weight:800; font-size:1.9rem;
+  letter-spacing:.02em; }}
+p.sub {{ margin:0 0 1.6rem; color:var(--ink-2); font-size:.88rem; max-width:30ch; }}
+label {{ display:block; font-size:.7rem; text-transform:uppercase; letter-spacing:.12em;
+  color:var(--ink-3); font-weight:700; margin:1.1rem 0 .3rem; }}
+/* A ruled line, not a box. The same input the key rail uses inside the app. */
+input {{ width:100%; background:none; border:0; border-bottom:var(--w-mid) solid var(--ink);
+  color:var(--ink); padding:.35rem 0; font:0.95rem var(--mono); }}
+input:focus {{ outline:none; border-bottom-color:var(--seal); }}
+button {{ width:100%; margin-top:1.6rem; background:var(--paper); color:var(--ink);
+  border:var(--w-mid) solid var(--ink); border-bottom-width:var(--w-heavy);
+  border-right-width:var(--w-heavy); box-shadow:3px 3px 0 var(--ink);
+  padding:.6rem; font:700 0.95rem var(--ui); cursor:pointer;
+  transition:translate .07s, box-shadow .07s; }}
+button:active {{ translate:3px 3px; box-shadow:0 0 0 var(--ink); }}
+button:focus-visible {{ outline:3px solid var(--seal); outline-offset:3px; }}
+.err {{ margin-top:1.1rem; padding-left:.8rem; border-left:3px solid var(--seal);
+  color:var(--seal); font-size:.85rem; }}
+.seed {{ margin-top:1.6rem; padding-top:1rem; border-top:var(--w-hair) solid rgba(11,11,11,.2);
+  color:var(--ink-3); font-size:.78rem; line-height:1.8; }}
+.seed code {{ color:var(--ink); font-family:var(--mono); }}
 </style>
 <div class="card">
 <h1>PRAETOR</h1>
@@ -250,7 +270,7 @@ class Handler(BaseHTTPRequestHandler):
             seed = SEED_BLOCK.format(pw=html.escape(DEMO_PASSWORD))
         body = LOGIN_PAGE.format(
             error=f'<div class="err">{html.escape(error)}</div>' if error else "",
-            email=html.escape(email), seed=seed)
+            email=html.escape(email), seed=seed, fonts="")
         self._send(code, body.encode(), "text/html; charset=utf-8")
 
     def _body(self) -> dict:

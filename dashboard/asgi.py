@@ -148,6 +148,18 @@ async def session(request: Request,
     return user, tenant
 
 
+async def maybe_user(request: Request) -> str | None:
+    """Who is signed in, or nobody. The permissive twin of `session`.
+
+    `session` refuses with 401, which is right for the JSON API and wrong for a page: a
+    browser asking for the app should be sent to the sign-in page, not handed an error.
+    Both read the cookie through the same function so there is still one answer to "is
+    this person signed in", and one place a test can override.
+    """
+    token = request.cookies.get(serve.COOKIE)
+    return auth.session_user(_conn(), token) if token else None
+
+
 # ------------------------------------------------------------------------- the queue
 
 def paginate(payload: dict, page: int, per_page: int) -> dict:
@@ -390,7 +402,24 @@ def _login_html(error: str = "", email: str = "") -> str:
         seed = serve.SEED_BLOCK.format(pw=_html.escape(DEMO_PASSWORD))
     return serve.LOGIN_PAGE.format(
         error=f'<div class="err">{_html.escape(error)}</div>' if error else "",
-        email=_html.escape(email), seed=seed)
+        email=_html.escape(email), seed=seed, fonts=_built_stylesheet())
+
+
+def _built_stylesheet() -> str:
+    """A link to the app's own stylesheet, so the sign-in page uses the real faces.
+
+    The filename is content-hashed and changes on every build, so it is read out of the
+    built `index.html` rather than guessed. Returns nothing when there is no build —
+    the page's fallback stack then carries it, which is the difference between the right
+    mincho and a serif, not between working and broken.
+    """
+    index = WEB_DIST / "index.html"
+    if not index.exists():
+        return ""
+    import re
+
+    found = re.search(r'href="(/assets/[^"]+\.css)"', index.read_text())
+    return f'<link rel="stylesheet" href="{found.group(1)}">' if found else ""
 
 
 @app.get("/login")
@@ -462,7 +491,7 @@ WEB_DIST = ROOT / "web" / "dist"
 
 
 @app.get("/{path:path}")
-async def spa(path: str):
+async def spa(path: str, user: str | None = Depends(maybe_user)):
     """Serve the built React app, and say plainly when it has not been built.
 
     Registered last, so every `/v1/*` route above wins. Anything else is handed
@@ -477,6 +506,17 @@ async def spa(path: str):
     from fastapi.responses import FileResponse, PlainTextResponse
 
     index = WEB_DIST / "index.html"
+
+    # "Not built" is checked first and on purpose. It is an operator's problem, not a
+    # visitor's, and sending them through a sign-in page to reach a broken app tells
+    # them the wrong thing about what is wrong.
+    if index.exists() and not path.startswith("assets/") and not user:
+        # No session, no app. Handing over the React shell means it loads, fetches, is
+        # refused, and only then says to sign in — a working application briefly
+        # pretending to be theirs. Assets are exempt: the sign-in page pulls its
+        # stylesheet from here.
+        return RedirectResponse("/login", status_code=303)
+
     if not index.exists():
         return PlainTextResponse(
             "The web app has not been built yet. Run: make web\n"

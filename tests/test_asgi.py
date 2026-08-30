@@ -65,6 +65,8 @@ def client(monkeypatch):
     # authorisation check existed — and had been passing for the wrong reason before it.
     asgi.app.dependency_overrides[asgi.session] = \
         lambda: ("reviewer@acme-industries.test", TENANT)
+    asgi.app.dependency_overrides[asgi.maybe_user] = \
+        lambda: "reviewer@acme-industries.test"
     monkeypatch.setattr(serve.READ_LIMIT, "limit", 10_000)
     monkeypatch.setattr(serve.RUN_LIMIT, "limit", 10_000)
     with TestClient(asgi.app) as c:
@@ -491,3 +493,29 @@ def test_an_agent_cannot_approve_a_payment(client):
                     json={"doc_id": "V000_004", "action": "approved", "codes": []})
     assert r.status_code == 403
     assert "agents cannot approve" in r.json()["detail"]
+
+
+def test_an_unauthenticated_visitor_is_sent_to_the_door(anonymous):
+    """The app is not shown to someone who cannot use it.
+
+    Handing over the React shell means it loads, fetches, is refused, and only then says
+    to sign in — a working application briefly pretending to be theirs.
+    """
+    for path in ("/", "/some/deep/link"):
+        r = anonymous.get(path, follow_redirects=False)
+        assert r.status_code == 303, path
+        assert r.headers["location"] == "/login"
+
+
+def test_a_signed_in_visitor_reaches_the_app_and_its_deep_links(client):
+    for path in ("/", "/some/deep/link"):
+        assert client.get(path, follow_redirects=False).status_code == 200, path
+
+
+def test_the_sign_in_page_wears_the_app_s_own_direction(anonymous):
+    """It is the first screen anybody sees. A dark login in front of an ink app is two
+    products wearing one name."""
+    page = anonymous.get("/login").text
+    assert "--paper:#EFEEE8" in page and "--ink:#0B0B0B" in page
+    assert "Shippori Mincho" in page
+    assert "#0e1116" not in page, "the old dark palette is still in the template"
