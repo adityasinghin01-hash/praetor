@@ -28,7 +28,7 @@ jobs:
       # gitignored). Build them here, so the tests that read them actually run instead
       # of skipping — a suite that silently skips its newest tests is worse than no CI.
       - name: build the derived artifacts
-        run: make rules db
+        run: make rules db web
 
       - name: the full suite
         run: make test
