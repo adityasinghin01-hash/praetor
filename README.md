@@ -1,19 +1,70 @@
 # PRAETOR
 
-An accounts-payable agent that resolves invoice exceptions on its own — and cannot be
-hijacked by the document it is reading.
+> An autonomous accounts-payable control plane that resolves invoice exceptions while
+> keeping untrusted documents outside the payment authority boundary.
 
 Built for the Google **All Things Agentic Hackathon** (Taskmaster track).
 
-**Live:** [https://praetor-836128159455.asia-south1.run.app](https://praetor-836128159455.asia-south1.run.app) — running on Cloud Run in `asia-south1`, with state in Cloud
-Firestore. Sign in with `reviewer@acme-industries.test` / `praetor`; the sign-in page
-lists the other seeded accounts. The data is synthetic and nothing served there calls a
-model, so the deployment cannot spend money.
+**[Open the live demo](https://praetor-836128159455.asia-south1.run.app)** ·
+**[View the architecture](docs/architecture.png)** ·
+**[Reproduce the evidence](#reproducing-every-number-we-publish)** ·
+**[Read the engineering decisions](docs/DECISIONS.md)**
+
+PRAETOR takes a real AP workflow past the chatbot stage. It reads invoices, detects
+exceptions, lets Gemini adjudicate the cases that need judgement, applies deterministic
+policy after the model, and sends only the irreducible decisions to a human. The agent
+can propose a payment; it can never approve one.
+
+The hostile input is the invoice itself. In the undefended baseline, **12 of 20** prompt
+injections persuaded Gemini to return an attacker's bank account. PRAETOR therefore does
+not try to make the model impossible to fool. It makes a fooled model unable to invent a
+payable value or cross the approval boundary.
+
+## Judge's quick path
+
+| Time | What to open | What it proves |
+|---|---|---|
+| 30 seconds | [Live Cloud Run app](https://praetor-836128159455.asia-south1.run.app) | A deployed review queue with authentication, role enforcement and Firestore-backed state |
+| 90 seconds | **Try to break it** in the app | An attacker-controlled remittance instruction reaches the real policy path and is refused |
+| 2 minutes | [Architecture diagram](docs/architecture.png) | The model/data trust boundary, span-only channel, deterministic kernel and human approval boundary |
+| 10 minutes | `make demo` | The complete offline corpus, rules baseline, tests and generated review dashboard |
+
+The hosted workspace contains clearly labelled **synthetic demo data**. Sign in with
+`reviewer@acme-industries.test` / `praetor`, or create a least-privilege viewer account.
+The public deployment deliberately serves the measured queue without making new model
+calls; the Gemini experiments and every published result are reproducible from this
+repository.
+
+## Hackathon fit
+
+| Requirement | PRAETOR implementation | Evidence |
+|---|---|---|
+| **Taskmaster workflow** | Invoice arrival → extraction → exception detection → agent adjudication → policy enforcement → human approval | [The design](#the-design) |
+| **Gemini 3.5+** | Gemini 3.5 Flash-Lite, with Gemini 3.5 Flash fallback, reads spans and adjudicates exceptions | [`praetor/agents/`](praetor/agents) |
+| **Google agent framework** | Google GenAI SDK with schema-constrained model responses and a strict cost guard | [`reader.py`](praetor/agents/reader.py), [`exception_agent.py`](praetor/agents/exception_agent.py) |
+| **Google Cloud** | Two Cloud Run services, Cloud Firestore state, Cloud Storage/Eventarc ingestion and OpenTelemetry traces | [Deployment architecture](#deployment) |
+| **Proof, not a claim** | 669 tests, a frozen synthetic corpus, public attack measurements and reproducible benchmarks | [FINDINGS.md](FINDINGS.md) |
+
+## Architecture
+
+[![PRAETOR architecture: untrusted invoice input is converted to immutable spans, a quarantined Gemini reader can return only span references, deterministic code resolves and checks values, and only a signed-in human can approve a payment](docs/architecture.png)](docs/architecture.png)
+
+The architecture has one rule: **the model handles references, never values**.
+
+| Boundary | Responsibility | Security property |
+|---|---|---|
+| Untrusted document zone | Immutable invoice, Document AI spans, quarantined reader | The only channel out is a schema of span IDs; literal values are rejected |
+| Deterministic kernel | Resolver, provenance, independent extraction path, rules and policy gate | No prompt can change the code that decides whether a value may proceed |
+| Decision path | Gemini exception agent operating on findings and buyer-controlled context | The agent sees no raw invoice text and returns advice, not authority |
+| Human boundary | Authenticated approver and append-only approval record | Identity comes from the server session; the browser cannot self-assign approval power |
+| Tenant boundary | Per-company vendor history plus refusal-only cross-tenant signals | Trust never crosses customers; shared refusals can only add scrutiny |
+
+**Measured outcomes:** 60% undefended injection success; **0** attacker-supplied payment
+values accepted by the protected path in the published runs; **28% fewer** human touches
+on the 350-document corpus; and **2 of 2** unsafe agent resolutions overruled by code.
 
 > **New to the repo? Read [TEAMMATE.md](TEAMMATE.md) instead.** It assumes no prior
 > context and walks through everything step by step.
-
-![PRAETOR architecture](docs/architecture.png)
 
 ---
 
@@ -404,6 +455,8 @@ unversioned alias whose version cannot be stated on a submission form.
 State lives behind one module, so it runs on **SQLite** by default and on **Cloud
 Firestore** with `PRAETOR_BACKEND=firestore` — see [docs/FIRESTORE.md](docs/FIRESTORE.md).
 The default stays local so `make demo` works with no account and no card.
+
+### Deployment
 
 **Deployed on Cloud Run**, `asia-south1`, state in Cloud Firestore, as **two services
 from one image**. `praetor` serves the review queue and calls no model, so it cannot
