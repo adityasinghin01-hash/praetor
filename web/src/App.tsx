@@ -106,6 +106,13 @@ export function App() {
         <span><b>04</b> Policy + human</span>
       </aside>
 
+      <aside className="demo-notice" aria-label="Demo workspace information">
+        <strong>Demo workspace</strong>
+        <span>
+          Showing synthetic invoice data. Upload a new invoice to see these totals update.
+        </span>
+      </aside>
+
       <main id="main" tabIndex={-1}>
         {/* The fallback says what is happening rather than showing a blank frame; on a
             slow connection a screen that is arriving and a screen that is broken must
