@@ -237,8 +237,9 @@ SIGNUP_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
   </section>
   <section class="card" aria-labelledby="form-title">
     <span class="status">Private by design</span>
-    <h2 id="form-title">Sign up with email</h2>
-    <p class="sub">Create a viewer account and start exploring the PRAETOR demo.</p>
+    <h2 id="form-title">Create a demo viewer account</h2>
+    <p class="sub">Join the shared PRAETOR demo workspace. It contains synthetic invoice
+    data, and anything you upload will update the demo totals.</p>
     <form method="POST" action="/signup">
       <label for="name">Name</label>
       <input id="name" name="name" autocomplete="name" maxlength="80" value="{name}" required autofocus>
@@ -251,7 +252,7 @@ SIGNUP_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
       <label for="confirm">Confirm password</label>
       <input id="confirm" name="confirm" type="password" autocomplete="new-password"
              minlength="12" maxlength="128" required>
-      <button type="submit">Create account with email →</button>
+      <button type="submit">Join demo workspace →</button>
     </form>
     {error}
     <p class="switch">Already have access? <a class="text-link" href="/login">Sign in</a></p>

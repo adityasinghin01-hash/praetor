@@ -459,6 +459,15 @@ def test_signup_issues_a_session_for_a_viewer_account(anonymous, monkeypatch):
     assert "httponly" in cookie and "samesite=strict" in cookie
 
 
+def test_signup_plainly_identifies_the_shared_demo_workspace(anonymous):
+    page = anonymous.get("/signup")
+
+    assert page.status_code == 200
+    assert "Create a demo viewer account" in page.text
+    assert "shared PRAETOR demo workspace" in page.text
+    assert "synthetic invoice" in page.text
+
+
 def test_signing_in_sets_a_session_and_lands_on_the_app(anonymous):
     from eval.build_db import DEMO_PASSWORD
 
